@@ -8,7 +8,7 @@ from datetime import datetime
 from database import get_db
 from models import Lead, ScrapeJob
 from config import get_settings
-from services.google_maps import search_businesses, grid_search_businesses
+from services.google_maps import search_businesses, grid_search_businesses, deep_search_businesses
 from services.email_finder import find_emails_for_domain
 from services.email_validator import validate_email, validate_emails_bulk
 
@@ -26,6 +26,7 @@ class GridScrapeRequest(BaseModel):
     keyword: str
     location: str
     square_size: int = 2000  # meters — 2000 covers ~12x12km, 5000 covers ~30x30km
+    mode: str = "grid"  # grid | deep
 
 
 class LeadUpdate(BaseModel):
@@ -64,27 +65,31 @@ async def scrape_leads(req: ScrapeRequest, background_tasks: BackgroundTasks, db
 @router.post("/scrape-grid")
 async def scrape_grid(req: GridScrapeRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
-    Grid/viewport scrape — ports the MAD MAX n8n algorithm.
-    Generates 36 viewport rectangles covering a square_size-meter grid around the location.
+    Grid scrape (mode=grid: 36 viewports) or Deep Sweep (mode=deep: 216 viewports, 6 centers).
     Runs in background. Poll /scrape-jobs/{id} for progress.
     """
     if not settings.google_maps_api_key:
         raise HTTPException(status_code=400, detail="GOOGLE_MAPS_API_KEY not set")
 
+    is_deep = req.mode == "deep"
+    viewports_total = 216 if is_deep else 36
+    mode_label = "deep" if is_deep else "grid"
+
     job = ScrapeJob(
         keyword=req.keyword,
         location=req.location,
-        mode="grid",
+        mode=mode_label,
         square_size=req.square_size,
-        viewports_total=36,
+        viewports_total=viewports_total,
         status="running",
     )
     db.add(job)
     db.commit()
     db.refresh(job)
 
-    background_tasks.add_task(_run_grid_scrape, job.id, req.keyword, req.location, req.square_size)
-    return {"job_id": job.id, "message": "Grid scrape started — 36 viewports queued", "viewports_total": 36}
+    background_tasks.add_task(_run_grid_scrape, job.id, req.keyword, req.location, req.square_size, is_deep)
+    msg = f"{'Deep Sweep' if is_deep else 'Grid scrape'} started — {viewports_total} viewports queued"
+    return {"job_id": job.id, "message": msg, "viewports_total": viewports_total, "mode": mode_label}
 
 
 @router.get("/scrape-jobs/{job_id}")
@@ -124,7 +129,7 @@ def list_scrape_jobs(db: Session = Depends(get_db)):
     ]
 
 
-async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size: int):
+async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size: int, deep: bool = False):
     from database import SessionLocal
     db = SessionLocal()
 
@@ -136,7 +141,8 @@ async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size
             db.commit()
 
     try:
-        businesses = await grid_search_businesses(keyword, location, settings.google_maps_api_key, square_size, _progress)
+        fn = deep_search_businesses if deep else grid_search_businesses
+        businesses = await fn(keyword, location, settings.google_maps_api_key, square_size, _progress)
 
         added, skipped = 0, 0
         for biz in businesses:

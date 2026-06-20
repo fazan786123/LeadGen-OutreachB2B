@@ -171,6 +171,28 @@ async def _search_viewport(
     return results
 
 
+def generate_outer_centers(lat_a: float, lon_a: float, square_size: float) -> list[dict]:
+    """
+    Outer ring generator — second n8n node.
+    Places 5 sweep centers around the origin at spacing = 3*2*square_size meters.
+    Combined with the origin that gives 6 total sweep centers that tile seamlessly.
+
+    Points (commented-out ones from original are excluded):
+      Top-middle, Top-left, Middle-left, Bottom-left, Bottom-middle
+    """
+    a = 3 * 2 * square_size  # = 6 × square_size
+
+    offsets = [
+        (0,  a),   # Top-middle
+        (-a, a),   # Top-left
+        (-a, 0),   # Middle-left
+        (-a, -a),  # Bottom-left
+        (0,  -a),  # Bottom-middle
+    ]
+
+    return [_offset_to_latlon(lat_a, lon_a, x, y) for x, y in offsets]
+
+
 async def grid_search_businesses(
     keyword: str,
     location: str,
@@ -179,9 +201,8 @@ async def grid_search_businesses(
     progress_callback=None,
 ) -> list[dict]:
     """
-    Full grid scrape using 36 viewport rectangles.
-    Returns deduplicated list of businesses.
-    progress_callback(done, total) is called after each viewport if provided.
+    Single-center grid scrape — 36 viewports, up to 720 results.
+    progress_callback(done, total, found) called after each viewport.
     """
     lat, lon = await geocode_location(location, api_key)
     viewports = generate_viewports(lat, lon, square_size)
@@ -192,6 +213,53 @@ async def grid_search_businesses(
 
     async with httpx.AsyncClient() as client:
         for i, viewport in enumerate(viewports):
+            batch = await _search_viewport(client, keyword, viewport, api_key)
+            for biz in batch:
+                pid = biz.get("google_place_id")
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    all_results.append(biz)
+
+            if progress_callback:
+                await progress_callback(i + 1, total, len(all_results))
+
+    return all_results
+
+
+async def deep_search_businesses(
+    keyword: str,
+    location: str,
+    api_key: str,
+    square_size: float = 2000,
+    progress_callback=None,
+) -> list[dict]:
+    """
+    Deep Sweep — 6 sweep centers × 36 viewports = 216 total viewport calls.
+    Up to 4,320 raw results before deduplication.
+
+    Centers: 1 origin + 5 outer ring points at 6× square_size spacing.
+    The outer spacing ensures grids tile with no gaps and minimal overlap.
+
+    progress_callback(done, total, found) called after each viewport across all centers.
+    """
+    lat, lon = await geocode_location(location, api_key)
+
+    # All 6 sweep centers: origin + 5 outer ring
+    outer = generate_outer_centers(lat, lon, square_size)
+    centers = [{"latitude": lat, "longitude": lon}] + outer
+
+    # Build all viewports across all 6 centers
+    all_viewports = []
+    for center in centers:
+        vps = generate_viewports(center["latitude"], center["longitude"], square_size)
+        all_viewports.extend(vps)
+
+    seen_ids = set()
+    all_results = []
+    total = len(all_viewports)  # 216
+
+    async with httpx.AsyncClient() as client:
+        for i, viewport in enumerate(all_viewports):
             batch = await _search_viewport(client, keyword, viewport, api_key)
             for biz in batch:
                 pid = biz.get("google_place_id")

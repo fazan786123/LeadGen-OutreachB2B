@@ -247,13 +247,16 @@ async function runScrape() {
   }
 }
 
-// Area Sweep modal (grid scraper — MAD MAX algorithm)
+// Area Sweep / Deep Sweep modal
 function openGridScrapeModal() {
   openModal(`
-    <div class="modal-title">⚡ Area Sweep — Grid Scraper</div>
-    <p style="color:var(--text2);font-size:13px;margin-bottom:16px">
-      Generates 36 viewport rectangles tiling the area and searches each one.<br>
-      Up to <strong style="color:var(--text)">720 raw results</strong> per sweep before deduplication.
+    <div class="modal-title">⚡ Grid Scraper</div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button id="mode-grid" class="btn btn-primary btn-sm" onclick="setGridMode('grid')">Area Sweep <small>(36 viewports)</small></button>
+      <button id="mode-deep" class="btn btn-ghost btn-sm" onclick="setGridMode('deep')">🔥 Deep Sweep <small>(216 viewports)</small></button>
+    </div>
+    <p id="mode-desc" style="color:var(--text2);font-size:13px;margin-bottom:16px">
+      36 viewport rectangles tiling the area — up to <strong style="color:var(--text)">720 raw results</strong>.
     </p>
     <div class="form-group">
       <label class="form-label">Business type / keyword</label>
@@ -266,11 +269,11 @@ function openGridScrapeModal() {
     <div class="form-group">
       <label class="form-label">Grid square size</label>
       <select id="grid-size" class="form-control">
-        <option value="1000">1 km — dense city centre (covers ~6×6km)</option>
-        <option value="2000" selected>2 km — standard city (covers ~12×12km)</option>
-        <option value="3000">3 km — large city (covers ~18×18km)</option>
-        <option value="5000">5 km — metro area (covers ~30×30km)</option>
-        <option value="10000">10 km — entire region (covers ~60×60km)</option>
+        <option value="1000">1 km — dense city centre</option>
+        <option value="2000" selected>2 km — standard city</option>
+        <option value="3000">3 km — large city</option>
+        <option value="5000">5 km — metro area</option>
+        <option value="10000">10 km — entire region</option>
       </select>
     </div>
     <div id="grid-progress-wrap" style="display:none;margin-bottom:16px;">
@@ -285,9 +288,19 @@ function openGridScrapeModal() {
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-      <button class="btn btn-primary" id="grid-btn" onclick="runGridScrape()">⚡ Start Area Sweep</button>
+      <button class="btn btn-primary" id="grid-btn" onclick="runGridScrape()">⚡ Start</button>
     </div>
   `);
+  window._gridMode = 'grid';
+}
+
+function setGridMode(mode) {
+  window._gridMode = mode;
+  document.getElementById('mode-grid').className = `btn btn-sm ${mode === 'grid' ? 'btn-primary' : 'btn-ghost'}`;
+  document.getElementById('mode-deep').className = `btn btn-sm ${mode === 'deep' ? 'btn-primary' : 'btn-ghost'}`;
+  document.getElementById('mode-desc').innerHTML = mode === 'deep'
+    ? '6 sweep centers × 36 viewports = 216 total — up to <strong style="color:var(--text)">4,320 raw results</strong>. Takes longer.'
+    : '36 viewport rectangles tiling the area — up to <strong style="color:var(--text)">720 raw results</strong>.';
 }
 
 let _gridPollInterval = null;
@@ -301,6 +314,7 @@ async function runGridScrape() {
       keyword: document.getElementById('grid-keyword').value,
       location: document.getElementById('grid-location').value,
       square_size: parseInt(document.getElementById('grid-size').value),
+      mode: window._gridMode || 'grid',
     });
 
     document.getElementById('grid-progress-wrap').style.display = 'block';
