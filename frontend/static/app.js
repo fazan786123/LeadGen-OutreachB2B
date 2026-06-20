@@ -174,7 +174,7 @@ function setPipeProgress(pct, title, subtitle, detail) {
   if (detail !== undefined) document.getElementById('prog-detail').textContent = detail;
 }
 
-async function runPipeline() {
+async function runSearch() {
   if (_pipeRunning) return;
 
   const keyword = document.getElementById('pipe-keyword').value.trim();
@@ -188,94 +188,104 @@ async function runPipeline() {
   const squareSize = parseInt(document.getElementById('pipe-radius').value) || 2000;
 
   _pipeRunning = true;
-  const btn = document.getElementById('pipe-run-btn');
+  const btn = document.getElementById('pipe-search-btn');
+  const enrichBtn = document.getElementById('pipe-enrich-btn');
   btn.disabled = true;
-  btn.textContent = '⏳ Running…';
+  btn.textContent = '⏳ Searching…';
+  enrichBtn.disabled = true;
 
   document.getElementById('prog-log').innerHTML = '';
   document.querySelectorAll('.pipe-step').forEach(s => s.classList.remove('active', 'done'));
   document.querySelectorAll('.pipe-step-line').forEach(l => l.classList.remove('done'));
 
   try {
-    // ── Step 1: Google Maps search ──────────────────────────────────
     setPipeStep('search', 'active');
     setPipeProgress(5, 'Searching Google Maps…', `${keyword} in ${location}`, 'Connecting to Maps API…');
     pipeLog(`Starting search: "${keyword}" in ${location}${maxResults ? ` (max ${maxResults})` : ''}`, 'info');
 
-    let added = 0;
     const res = await api('POST', '/api/leads/scrape-grid', {
       keyword, location, square_size: squareSize, mode: 'grid', max_items: maxResults,
     });
     pipeLog(`Search job #${res.job_id} started`, 'info');
-    added = await _pollGridJob(res.job_id);
+    const added = await _pollGridJob(res.job_id);
 
     setPipeStep('search', 'done');
     document.querySelector('.pipe-step-line')?.classList.add('done');
+    setPipeProgress(100, 'Maps search complete ✓', `${added} new leads added`, 'Click Enrich Leads to find decision makers & emails');
+    pipeLog(`Done — ${added} new leads added`, 'ok');
+    toast(`Found ${added} new leads — click Enrich Leads to continue`, 'success');
     await loadDashboardResults();
     await loadDashboardStats();
-
-    // ── Step 2: Find decision makers ────────────────────────────────
-    if (true) {
-      setPipeStep('people', 'active');
-      setPipeProgress(40, 'Finding decision makers…', 'Brave Search', 'Looking up owners & CEOs…');
-      pipeLog('Queuing Brave Search for decision makers…', 'info');
-      const res = await api('POST', '/api/leads/find-persons-bulk');
-      pipeLog(res.message, res.queued ? 'ok' : 'info');
-      await _waitForBulk('people', 50, 70);
-      setPipeStep('people', 'done');
-      document.querySelectorAll('.pipe-step-line')[1]?.classList.add('done');
-      await loadDashboardResults();
-    } else {
-      pipeLog('Skipped decision-maker lookup', 'info');
-    }
-
-    // ── Step 3: Find emails ─────────────────────────────────────────
-    if (true) {
-      setPipeStep('emails', 'active');
-      setPipeProgress(72, 'Finding emails…', 'Running email finder chain', 'Apollo → Snov → Hunter…');
-      pipeLog('Queuing email finder chain…', 'info');
-      const res = await api('POST', '/api/leads/find-emails-bulk');
-      pipeLog(res.message, res.queued ? 'ok' : 'info');
-      await _waitForBulk('emails', 72, 88);
-      setPipeStep('emails', 'done');
-      document.querySelectorAll('.pipe-step-line')[2]?.classList.add('done');
-      await loadDashboardResults();
-      await loadDashboardStats();
-    } else {
-      pipeLog('Skipped email finder', 'info');
-    }
-
-    // ── Step 4: Validate emails ─────────────────────────────────────
-    if (true) {
-      setPipeStep('validate', 'active');
-      setPipeProgress(90, 'Validating emails…', 'SMTP + format checks', 'This may take a minute…');
-      pipeLog('Queuing email validation…', 'info');
-      const res = await api('POST', '/api/leads/validate-emails-bulk');
-      pipeLog(res.message, res.queued ? 'ok' : 'info');
-      await _waitForBulk('validate', 90, 98);
-      setPipeStep('validate', 'done');
-      document.querySelectorAll('.pipe-step-line')[3]?.classList.add('done');
-      await loadDashboardResults();
-    } else {
-      pipeLog('Skipped validation', 'info');
-    }
-
-    setPipeProgress(100, 'Pipeline complete ✓', `${added} new leads from this run`, 'All steps finished');
-    document.getElementById('prog-icon').textContent = '✓';
-    document.getElementById('prog-icon').classList.add('active');
-    pipeLog('Pipeline finished successfully', 'ok');
-    toast(`Pipeline complete — ${added} new leads added`, 'success');
+    enrichBtn.disabled = false;
 
   } catch (e) {
-    setPipeProgress(0, 'Pipeline failed', e.message, '');
+    setPipeProgress(0, 'Search failed', e.message, '');
     pipeLog('Error: ' + e.message, 'err');
-    toast('Pipeline error: ' + e.message, 'error');
+    toast('Search error: ' + e.message, 'error');
   } finally {
     _pipeRunning = false;
     btn.disabled = false;
-    btn.textContent = '▶ Run Pipeline';
-    await loadDashboardStats();
+    btn.textContent = '🗺️ Search Maps';
+  }
+}
+
+async function runEnrich() {
+  if (_pipeRunning) return;
+
+  _pipeRunning = true;
+  const btn = document.getElementById('pipe-enrich-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Enriching…';
+
+  try {
+    // ── Step 2: Find decision makers ────────────────────────────────
+    setPipeStep('people', 'active');
+    setPipeProgress(10, 'Finding decision makers…', 'Brave Search', 'Looking up owners & CEOs…');
+    pipeLog('Queuing Brave Search for decision makers…', 'info');
+    const peopleRes = await api('POST', '/api/leads/find-persons-bulk');
+    pipeLog(peopleRes.message, peopleRes.queued ? 'ok' : 'info');
+    await _waitForBulk('people', 10, 40);
+    setPipeStep('people', 'done');
+    document.querySelectorAll('.pipe-step-line')[1]?.classList.add('done');
     await loadDashboardResults();
+
+    // ── Step 3: Find emails ─────────────────────────────────────────
+    setPipeStep('emails', 'active');
+    setPipeProgress(45, 'Finding emails…', 'Running email finder chain', 'Apollo → Snov → Hunter…');
+    pipeLog('Queuing email finder chain…', 'info');
+    const emailRes = await api('POST', '/api/leads/find-emails-bulk');
+    pipeLog(emailRes.message, emailRes.queued ? 'ok' : 'info');
+    await _waitForBulk('emails', 45, 75);
+    setPipeStep('emails', 'done');
+    document.querySelectorAll('.pipe-step-line')[2]?.classList.add('done');
+    await loadDashboardResults();
+    await loadDashboardStats();
+
+    // ── Step 4: Validate emails ─────────────────────────────────────
+    setPipeStep('validate', 'active');
+    setPipeProgress(80, 'Validating emails…', 'SMTP + format checks', 'This may take a minute…');
+    pipeLog('Queuing email validation…', 'info');
+    const valRes = await api('POST', '/api/leads/validate-emails-bulk');
+    pipeLog(valRes.message, valRes.queued ? 'ok' : 'info');
+    await _waitForBulk('validate', 80, 98);
+    setPipeStep('validate', 'done');
+    document.querySelectorAll('.pipe-step-line')[3]?.classList.add('done');
+
+    setPipeProgress(100, 'Enrichment complete ✓', 'All steps finished', '');
+    document.getElementById('prog-icon').textContent = '✓';
+    pipeLog('Enrichment finished successfully', 'ok');
+    toast('Enrichment complete!', 'success');
+    await loadDashboardResults();
+    await loadDashboardStats();
+
+  } catch (e) {
+    setPipeProgress(0, 'Enrichment failed', e.message, '');
+    pipeLog('Error: ' + e.message, 'err');
+    toast('Enrichment error: ' + e.message, 'error');
+  } finally {
+    _pipeRunning = false;
+    btn.disabled = false;
+    btn.textContent = '⚡ Enrich Leads';
   }
 }
 
