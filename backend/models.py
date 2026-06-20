@@ -24,6 +24,7 @@ class Lead(Base):
     decision_maker_title = Column(String(255))
     email_confidence = Column(Integer)
     email_status = Column(String(50), default="not_searched")  # not_searched | found | not_found
+    email_source = Column(String(50))  # website_scrape | pattern_guess | apollo | snov | skrapp | findthat | hunter
     # Email validation
     email_grade = Column(String(20))       # valid | risky | invalid | None (not validated)
     email_valid_reason = Column(String(100))

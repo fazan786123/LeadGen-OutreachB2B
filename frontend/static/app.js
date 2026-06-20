@@ -30,6 +30,21 @@ function badge(val, prefix = '') {
   return `<span class="badge badge-${cls}">${val}</span>`;
 }
 
+function sourceBadge(source) {
+  if (!source) return '';
+  const map = {
+    website_scrape: { icon: '🌐', label: 'website', cls: 'source-website' },
+    pattern_guess:  { icon: '🔍', label: 'pattern', cls: 'source-pattern' },
+    apollo:         { icon: '🚀', label: 'apollo',  cls: 'source-api' },
+    snov:           { icon: '❄️',  label: 'snov',    cls: 'source-api' },
+    skrapp:         { icon: '🥊', label: 'skrapp',  cls: 'source-api' },
+    findthat:       { icon: '🔎', label: 'findthat',cls: 'source-api' },
+    hunter:         { icon: '🏹', label: 'hunter',  cls: 'source-api' },
+  };
+  const m = map[source] || { icon: '?', label: source, cls: 'source-api' };
+  return `<span class="${m.cls}" title="${source}">${m.icon} ${m.label}</span>`;
+}
+
 function gradeBadge(grade, reason) {
   if (!grade) return '<span class="grade-unknown" title="Not validated">?</span>';
   const icons = { valid: '✓', risky: '⚠', invalid: '✕' };
@@ -124,7 +139,7 @@ function renderLeadsTable(leads) {
       <td><strong>${esc(l.business_name)}</strong><br><small style="color:var(--text2)">${esc(l.address || '')}</small></td>
       <td>${l.website ? `<a href="${esc(l.website)}" target="_blank" style="color:var(--accent)">${esc(l.domain || l.website)}</a>` : '—'}</td>
       <td>${badge(l.email_status)}</td>
-      <td>${l.decision_maker_email ? `<strong>${esc(l.decision_maker_name || '')}</strong><br><small>${esc(l.decision_maker_email)}</small>` : '—'}</td>
+      <td>${l.decision_maker_email ? `<strong>${esc(l.decision_maker_name || '')}</strong><br><small>${esc(l.decision_maker_email)}</small><br>${sourceBadge(l.email_source)}` : '—'}</td>
       <td>${gradeBadge(l.email_grade, l.email_valid_reason)}</td>
       <td>${badge(l.status)}</td>
       <td>${l.rating ? '⭐ ' + l.rating : '—'}</td>

@@ -9,7 +9,7 @@ from database import get_db
 from models import Lead, ScrapeJob
 from config import get_settings
 from services.google_maps import search_businesses, grid_search_businesses, deep_search_businesses
-from services.email_finder import find_emails_for_domain
+from services.email_chain import find_email_chain
 from services.email_validator import validate_email, validate_emails_bulk
 
 router = APIRouter(prefix="/api/leads", tags=["leads"])
@@ -179,16 +179,14 @@ async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size
 
 @router.post("/{lead_id}/find-email")
 async def find_email(lead_id: int, db: Session = Depends(get_db)):
-    """Run Hunter.io domain search for a single lead."""
+    """Run full email finder chain for a single lead (website → pattern → APIs)."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     if not lead.domain:
         raise HTTPException(status_code=400, detail="Lead has no domain — add a website first")
-    if not settings.hunter_api_key:
-        raise HTTPException(status_code=400, detail="HUNTER_API_KEY not set")
 
-    result = await find_emails_for_domain(lead.domain, settings.hunter_api_key)
+    result = await find_email_chain(lead.domain, lead.website or "")
 
     if result["status"] == "found":
         lead.decision_maker_email = result["email"]
@@ -196,20 +194,25 @@ async def find_email(lead_id: int, db: Session = Depends(get_db)):
         lead.decision_maker_title = result.get("title")
         lead.email_confidence = result.get("confidence")
         lead.email_status = "found"
+        lead.email_source = result.get("source")
     else:
         lead.email_status = "not_found"
+        lead.email_source = None
 
     lead.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(lead)
-    return {"status": result["status"], "lead": _lead_dict(lead)}
+    return {
+        "status": result["status"],
+        "source": result.get("source"),
+        "tried": result.get("tried", []),
+        "lead": _lead_dict(lead),
+    }
 
 
 @router.post("/find-emails-bulk")
 async def find_emails_bulk(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Queue email lookup for all leads with a domain but no email yet."""
-    if not settings.hunter_api_key:
-        raise HTTPException(status_code=400, detail="HUNTER_API_KEY not set")
+    """Queue email chain for all leads with a domain but no email yet."""
 
     leads = db.query(Lead).filter(
         Lead.domain.isnot(None),
@@ -231,15 +234,17 @@ async def _bulk_email_search(lead_ids: list[int]):
             lead = db.query(Lead).filter(Lead.id == lead_id).first()
             if not lead or not lead.domain:
                 continue
-            result = await find_emails_for_domain(lead.domain, settings.hunter_api_key)
+            result = await find_email_chain(lead.domain, lead.website or "")
             if result["status"] == "found":
                 lead.decision_maker_email = result["email"]
                 lead.decision_maker_name = result.get("name")
                 lead.decision_maker_title = result.get("title")
                 lead.email_confidence = result.get("confidence")
                 lead.email_status = "found"
+                lead.email_source = result.get("source")
             else:
                 lead.email_status = "not_found"
+                lead.email_source = None
             lead.updated_at = datetime.utcnow()
             db.commit()
     finally:
@@ -382,6 +387,7 @@ def _lead_dict(lead: Lead) -> dict:
         "decision_maker_title": lead.decision_maker_title,
         "email_confidence": lead.email_confidence,
         "email_status": lead.email_status,
+        "email_source": lead.email_source,
         "email_grade": lead.email_grade,
         "email_valid_reason": lead.email_valid_reason,
         "email_validated_at": lead.email_validated_at.isoformat() if lead.email_validated_at else None,
