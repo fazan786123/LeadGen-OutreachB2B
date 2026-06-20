@@ -18,7 +18,9 @@ async function api(method, path, body) {
   const res = await fetch(API + path, opts);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || res.statusText);
+    const msg = err.detail || res.statusText;
+    pipeLog(`❌ ${method} ${path} → ${msg}`, 'err');
+    throw new Error(msg);
   }
   return res.json();
 }
@@ -150,13 +152,32 @@ function renderDashboardResults(leads, total) {
 }
 
 function pipeLog(msg, type = '') {
+  const timestamp = `[${new Date().toLocaleTimeString()}]`;
+
+  // Write to progress log (clears each run)
   const log = document.getElementById('prog-log');
-  if (!log) return;
-  const line = document.createElement('span');
-  line.className = 'log-line ' + type;
-  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  log.appendChild(line);
-  log.scrollTop = log.scrollHeight;
+  if (log) {
+    const line = document.createElement('span');
+    line.className = 'log-line ' + type;
+    line.textContent = `${timestamp} ${msg}`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // Also write to persistent activity log
+  const activity = document.getElementById('activity-log');
+  if (activity) {
+    const line = document.createElement('span');
+    line.className = 'log-line ' + type;
+    line.textContent = `${timestamp} ${msg}`;
+    activity.appendChild(line);
+    activity.scrollTop = activity.scrollHeight;
+  }
+}
+
+function clearActivityLog() {
+  const el = document.getElementById('activity-log');
+  if (el) el.innerHTML = '';
 }
 
 function setPipeStep(step, state) {

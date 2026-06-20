@@ -130,6 +130,19 @@
     <div class="progress-log" id="prog-log"></div>
   </div>
 
+  <!-- Activity Log -->
+  <div class="pipeline-card" id="activity-log-card">
+    <div class="pipeline-card-header">
+      <span class="step-num">📋</span>
+      <div style="flex:1">
+        <h2>Activity Log</h2>
+        <p>All API calls, errors and results</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="clearActivityLog()">Clear</button>
+    </div>
+    <div class="progress-log" id="activity-log" style="max-height:300px"></div>
+  </div>
+
   <!-- Results -->
   <div class="pipeline-card" id="pipe-results-card">
     <div class="pipeline-card-header">
