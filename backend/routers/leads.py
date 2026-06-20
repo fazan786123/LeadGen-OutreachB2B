@@ -6,9 +6,9 @@ from typing import Optional
 from datetime import datetime
 
 from database import get_db
-from models import Lead
+from models import Lead, ScrapeJob
 from config import get_settings
-from services.google_maps import search_businesses
+from services.google_maps import search_businesses, grid_search_businesses
 from services.email_finder import find_emails_for_domain
 from services.email_validator import validate_email, validate_emails_bulk
 
@@ -20,6 +20,12 @@ class ScrapeRequest(BaseModel):
     keyword: str
     location: str
     max_results: int = 20
+
+
+class GridScrapeRequest(BaseModel):
+    keyword: str
+    location: str
+    square_size: int = 2000  # meters — 2000 covers ~12x12km, 5000 covers ~30x30km
 
 
 class LeadUpdate(BaseModel):
@@ -53,6 +59,115 @@ async def scrape_leads(req: ScrapeRequest, background_tasks: BackgroundTasks, db
 
     db.commit()
     return {"added": added, "skipped": skipped, "total_found": len(businesses)}
+
+
+@router.post("/scrape-grid")
+async def scrape_grid(req: GridScrapeRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Grid/viewport scrape — ports the MAD MAX n8n algorithm.
+    Generates 36 viewport rectangles covering a square_size-meter grid around the location.
+    Runs in background. Poll /scrape-jobs/{id} for progress.
+    """
+    if not settings.google_maps_api_key:
+        raise HTTPException(status_code=400, detail="GOOGLE_MAPS_API_KEY not set")
+
+    job = ScrapeJob(
+        keyword=req.keyword,
+        location=req.location,
+        mode="grid",
+        square_size=req.square_size,
+        viewports_total=36,
+        status="running",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    background_tasks.add_task(_run_grid_scrape, job.id, req.keyword, req.location, req.square_size)
+    return {"job_id": job.id, "message": "Grid scrape started — 36 viewports queued", "viewports_total": 36}
+
+
+@router.get("/scrape-jobs/{job_id}")
+def get_scrape_job(job_id: int, db: Session = Depends(get_db)):
+    """Poll this endpoint for grid scrape progress."""
+    job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "id": job.id,
+        "status": job.status,
+        "keyword": job.keyword,
+        "location": job.location,
+        "square_size": job.square_size,
+        "viewports_done": job.viewports_done,
+        "viewports_total": job.viewports_total,
+        "progress_pct": round((job.viewports_done / job.viewports_total) * 100) if job.viewports_total else 0,
+        "leads_found": job.leads_found,
+        "leads_added": job.leads_added,
+        "error": job.error,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+    }
+
+
+@router.get("/scrape-jobs")
+def list_scrape_jobs(db: Session = Depends(get_db)):
+    jobs = db.query(ScrapeJob).order_by(ScrapeJob.created_at.desc()).limit(20).all()
+    return [
+        {
+            "id": j.id, "keyword": j.keyword, "location": j.location,
+            "mode": j.mode, "status": j.status,
+            "viewports_done": j.viewports_done, "viewports_total": j.viewports_total,
+            "leads_added": j.leads_added, "created_at": j.created_at.isoformat() if j.created_at else None,
+        }
+        for j in jobs
+    ]
+
+
+async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size: int):
+    from database import SessionLocal
+    db = SessionLocal()
+
+    async def _progress(done: int, total: int, found: int):
+        job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+        if job:
+            job.viewports_done = done
+            job.leads_found = found
+            db.commit()
+
+    try:
+        businesses = await grid_search_businesses(keyword, location, settings.google_maps_api_key, square_size, _progress)
+
+        added, skipped = 0, 0
+        for biz in businesses:
+            existing = db.query(Lead).filter(Lead.google_place_id == biz["google_place_id"]).first()
+            if existing:
+                skipped += 1
+                continue
+            lead = Lead(**{k: v for k, v in biz.items() if hasattr(Lead, k)})
+            db.add(lead)
+            added += 1
+
+        db.commit()
+
+        job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+        if job:
+            job.status = "done"
+            job.leads_added = added
+            job.leads_found = len(businesses)
+            job.viewports_done = 36
+            job.finished_at = datetime.utcnow()
+            db.commit()
+
+    except Exception as e:
+        job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+        if job:
+            job.status = "failed"
+            job.error = str(e)
+            job.finished_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
 
 
 @router.post("/{lead_id}/find-email")

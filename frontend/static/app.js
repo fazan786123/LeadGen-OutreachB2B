@@ -205,10 +205,11 @@ async function saveLeadEdit(leadId) {
   }
 }
 
-// Scrape modal
+// Quick Scrape modal
 function openScrapeModal() {
   openModal(`
-    <div class="modal-title">Scrape Google Maps</div>
+    <div class="modal-title">Quick Search — Google Maps</div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:16px">Single query, up to 60 results. Fast.</p>
     <div class="form-group">
       <label class="form-label">Business type / keyword</label>
       <input id="scrape-keyword" class="form-control" placeholder="e.g. roofing company, dental clinic, law firm">
@@ -243,6 +244,104 @@ async function runScrape() {
   } catch (e) {
     toast('Scrape error: ' + e.message, 'error');
     btn.disabled = false; btn.textContent = 'Scrape';
+  }
+}
+
+// Area Sweep modal (grid scraper — MAD MAX algorithm)
+function openGridScrapeModal() {
+  openModal(`
+    <div class="modal-title">⚡ Area Sweep — Grid Scraper</div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:16px">
+      Generates 36 viewport rectangles tiling the area and searches each one.<br>
+      Up to <strong style="color:var(--text)">720 raw results</strong> per sweep before deduplication.
+    </p>
+    <div class="form-group">
+      <label class="form-label">Business type / keyword</label>
+      <input id="grid-keyword" class="form-control" placeholder="e.g. roofing company, dentist, law firm">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Location / City</label>
+      <input id="grid-location" class="form-control" placeholder="e.g. Austin TX, Houston TX, London UK">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Grid square size</label>
+      <select id="grid-size" class="form-control">
+        <option value="1000">1 km — dense city centre (covers ~6×6km)</option>
+        <option value="2000" selected>2 km — standard city (covers ~12×12km)</option>
+        <option value="3000">3 km — large city (covers ~18×18km)</option>
+        <option value="5000">5 km — metro area (covers ~30×30km)</option>
+        <option value="10000">10 km — entire region (covers ~60×60km)</option>
+      </select>
+    </div>
+    <div id="grid-progress-wrap" style="display:none;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+        <span id="grid-progress-label" style="color:var(--text2)">Starting...</span>
+        <span id="grid-progress-pct" style="color:var(--accent)">0%</span>
+      </div>
+      <div style="background:var(--bg3);border-radius:6px;height:8px;overflow:hidden;">
+        <div id="grid-progress-bar" style="height:100%;background:var(--accent);width:0%;transition:width 0.4s;border-radius:6px;"></div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text2)" id="grid-progress-detail"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="btn btn-primary" id="grid-btn" onclick="runGridScrape()">⚡ Start Area Sweep</button>
+    </div>
+  `);
+}
+
+let _gridPollInterval = null;
+
+async function runGridScrape() {
+  const btn = document.getElementById('grid-btn');
+  btn.disabled = true; btn.textContent = 'Starting...';
+
+  try {
+    const res = await api('POST', '/api/leads/scrape-grid', {
+      keyword: document.getElementById('grid-keyword').value,
+      location: document.getElementById('grid-location').value,
+      square_size: parseInt(document.getElementById('grid-size').value),
+    });
+
+    document.getElementById('grid-progress-wrap').style.display = 'block';
+    btn.textContent = 'Running...';
+
+    // Poll for progress every 3 seconds
+    _gridPollInterval = setInterval(async () => {
+      try {
+        const job = await api('GET', `/api/leads/scrape-jobs/${res.job_id}`);
+        const pct = job.progress_pct || 0;
+
+        document.getElementById('grid-progress-bar').style.width = pct + '%';
+        document.getElementById('grid-progress-pct').textContent = pct + '%';
+        document.getElementById('grid-progress-label').textContent =
+          `Viewport ${job.viewports_done} / ${job.viewports_total}`;
+        document.getElementById('grid-progress-detail').textContent =
+          `${job.leads_found} unique businesses found so far`;
+
+        if (job.status === 'done') {
+          clearInterval(_gridPollInterval);
+          document.getElementById('grid-progress-bar').style.width = '100%';
+          document.getElementById('grid-progress-pct').textContent = '100%';
+          document.getElementById('grid-progress-label').textContent = 'Done!';
+          document.getElementById('grid-progress-detail').textContent =
+            `✓ Added ${job.leads_added} new leads (${job.leads_found - job.leads_added} duplicates skipped)`;
+          btn.textContent = 'Done';
+          toast(`Area Sweep complete — ${job.leads_added} new leads added`, 'success');
+          await loadLeads();
+        } else if (job.status === 'failed') {
+          clearInterval(_gridPollInterval);
+          toast('Grid scrape failed: ' + (job.error || 'unknown error'), 'error');
+          btn.disabled = false; btn.textContent = '⚡ Retry';
+        }
+      } catch (e) {
+        // poll errors are non-fatal
+      }
+    }, 3000);
+
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+    btn.disabled = false; btn.textContent = '⚡ Start Area Sweep';
   }
 }
 

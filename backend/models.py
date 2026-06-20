@@ -37,6 +37,24 @@ class Lead(Base):
     email_logs = relationship("EmailLog", back_populates="lead")
 
 
+class ScrapeJob(Base):
+    __tablename__ = "scrape_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    keyword = Column(String(255))
+    location = Column(String(255))
+    mode = Column(String(20), default="quick")       # quick | grid
+    square_size = Column(Integer)                     # meters, grid mode only
+    status = Column(String(20), default="running")   # running | done | failed
+    viewports_done = Column(Integer, default=0)
+    viewports_total = Column(Integer, default=0)
+    leads_found = Column(Integer, default=0)
+    leads_added = Column(Integer, default=0)
+    error = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    finished_at = Column(DateTime)
+
+
 class Campaign(Base):
     __tablename__ = "campaigns"
 
