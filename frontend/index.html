@@ -3,69 +3,214 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LeadGen Dashboard</title>
+  <title>LeadGen — B2B Outreach</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 
 <div class="sidebar">
-  <div class="sidebar-logo">LeadGen B2B<span>Outreach System</span></div>
+  <div class="sidebar-logo">LeadGen<span>B2B Outreach</span></div>
   <nav>
-    <a class="nav-link active" href="/"><span class="icon">📊</span> Dashboard</a>
-    <a class="nav-link" href="/leads.html"><span class="icon">🏢</span> Leads</a>
+    <a class="nav-link active" href="/"><span class="icon">⚡</span> Run Pipeline</a>
+    <a class="nav-link" href="/leads.html"><span class="icon">🏢</span> All Leads</a>
     <a class="nav-link" href="/campaigns.html"><span class="icon">📧</span> Campaigns</a>
     <a class="nav-link" href="/activity.html"><span class="icon">📋</span> Activity</a>
   </nav>
 </div>
 
 <div class="main">
-  <div class="page-title">Dashboard</div>
-  <div class="page-sub">Overview of your lead gen pipeline</div>
-
-  <div class="stats-grid">
-    <div class="stat-card">
-      <div class="stat-label">Total Leads</div>
-      <div class="stat-value purple" id="stat-total-leads">—</div>
+  <div class="dash-header">
+    <div>
+      <h1 class="page-title">Lead Pipeline</h1>
+      <p class="page-sub">Search Google Maps, find decision-makers, and discover emails — all in one run.</p>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">With Email</div>
-      <div class="stat-value green" id="stat-with-email">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Contacted</div>
-      <div class="stat-value" id="stat-contacted">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Replied</div>
-      <div class="stat-value yellow" id="stat-replied">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Converted</div>
-      <div class="stat-value green" id="stat-converted">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Sent Today</div>
-      <div class="stat-value" id="stat-sent-today">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Total Sent</div>
-      <div class="stat-value" id="stat-total-sent">—</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Failed</div>
-      <div class="stat-value" style="color:var(--danger)" id="stat-failed">—</div>
+    <div class="dash-stats-mini" id="dash-stats-mini">
+      <div class="mini-stat"><span id="mini-total">—</span><label>Leads</label></div>
+      <div class="mini-stat"><span id="mini-email" class="green">—</span><label>Emails</label></div>
+      <div class="mini-stat"><span id="mini-valid" class="green">—</span><label>Valid</label></div>
     </div>
   </div>
 
-  <div class="card">
-    <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Emails sent — last 7 days</div>
-    <div class="chart-bar-wrap" id="chart-bars"></div>
-    <div class="chart-labels" id="chart-labels" style="margin-top:6px;"></div>
+  <!-- Input panel -->
+  <div class="pipeline-card">
+    <div class="pipeline-card-header">
+      <span class="step-num">1</span>
+      <div>
+        <h2>Search inputs</h2>
+        <p>What businesses do you want to find, and where?</p>
+      </div>
+    </div>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">Business type / keyword</label>
+        <input id="pipe-keyword" class="form-control form-control-lg" placeholder="e.g. roofing company, dental clinic, law firm" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Location</label>
+        <input id="pipe-location" class="form-control form-control-lg" placeholder="e.g. Austin TX, London UK" autocomplete="off">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Search mode</label>
+      <div class="mode-cards" id="mode-cards">
+        <label class="mode-card active" data-mode="quick">
+          <input type="radio" name="search-mode" value="quick" checked>
+          <div class="mode-card-body">
+            <strong>Quick Search</strong>
+            <span>Single Maps query · up to 60 results · ~30 sec</span>
+          </div>
+        </label>
+        <label class="mode-card" data-mode="grid">
+          <input type="radio" name="search-mode" value="grid">
+          <div class="mode-card-body">
+            <strong>Area Sweep</strong>
+            <span>36 viewports · up to 2,160 results · ~5 min</span>
+          </div>
+        </label>
+        <label class="mode-card" data-mode="deep">
+          <input type="radio" name="search-mode" value="deep">
+          <div class="mode-card-body">
+            <strong>Deep Sweep</strong>
+            <span>324 viewports · up to 19,440 results · ~30 min</span>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div id="mode-options-quick" class="mode-options">
+      <div class="form-group" style="max-width:200px">
+        <label class="form-label">Max results</label>
+        <input id="pipe-max-quick" class="form-control" type="number" value="20" min="1" max="60">
+      </div>
+    </div>
+
+    <div id="mode-options-grid" class="mode-options hidden">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">Grid square size</label>
+          <select id="pipe-grid-size" class="form-control">
+            <option value="1000">1 km — dense city centre</option>
+            <option value="2000" selected>2 km — standard city</option>
+            <option value="3000">3 km — large city</option>
+            <option value="5000">5 km — metro area</option>
+            <option value="10000">10 km — entire region</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max leads <small>(0 = unlimited)</small></label>
+          <input id="pipe-max-grid" class="form-control" type="number" value="0" min="0">
+        </div>
+      </div>
+    </div>
+
+    <div class="pipeline-card-header" style="margin-top:28px">
+      <span class="step-num">2</span>
+      <div>
+        <h2>Enrichment</h2>
+        <p>Run automatically after search completes</p>
+      </div>
+    </div>
+
+    <div class="enrich-toggles">
+      <label class="toggle-card">
+        <input type="checkbox" id="pipe-find-people" checked>
+        <div>
+          <strong>Find decision makers</strong>
+          <span>Brave Search — owner / CEO name & title</span>
+        </div>
+      </label>
+      <label class="toggle-card">
+        <input type="checkbox" id="pipe-find-emails" checked>
+        <div>
+          <strong>Find emails</strong>
+          <span>Website scrape → Apollo → Snov → Hunter</span>
+        </div>
+      </label>
+      <label class="toggle-card">
+        <input type="checkbox" id="pipe-validate" checked>
+        <div>
+          <strong>Validate emails</strong>
+          <span>SMTP + format checks — mark valid / risky / invalid</span>
+        </div>
+      </label>
+    </div>
+
+    <div class="pipeline-actions">
+      <button class="btn btn-primary btn-lg" id="pipe-run-btn" onclick="runPipeline()">
+        ▶ Run Pipeline
+      </button>
+      <a href="/leads.html" class="btn btn-ghost">View all leads →</a>
+    </div>
   </div>
 
-  <div style="margin-top:20px;display:flex;gap:12px;">
-    <a href="/leads.html" class="btn btn-primary">Go to Leads →</a>
-    <a href="/campaigns.html" class="btn btn-ghost">Manage Campaigns →</a>
+  <!-- Progress panel -->
+  <div class="pipeline-card hidden" id="pipe-progress-card">
+    <div class="pipeline-card-header">
+      <span class="step-num active" id="prog-icon">⏳</span>
+      <div>
+        <h2 id="prog-title">Running pipeline…</h2>
+        <p id="prog-subtitle">Starting search</p>
+      </div>
+    </div>
+
+    <div class="pipeline-steps" id="pipeline-steps">
+      <div class="pipe-step" data-step="search">
+        <div class="pipe-step-dot"></div>
+        <span>Google Maps</span>
+      </div>
+      <div class="pipe-step-line"></div>
+      <div class="pipe-step" data-step="people">
+        <div class="pipe-step-dot"></div>
+        <span>Decision makers</span>
+      </div>
+      <div class="pipe-step-line"></div>
+      <div class="pipe-step" data-step="emails">
+        <div class="pipe-step-dot"></div>
+        <span>Find emails</span>
+      </div>
+      <div class="pipe-step-line"></div>
+      <div class="pipe-step" data-step="validate">
+        <div class="pipe-step-dot"></div>
+        <span>Validate</span>
+      </div>
+    </div>
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar" id="prog-bar" style="width:0%"></div>
+    </div>
+    <div class="progress-detail" id="prog-detail"></div>
+
+    <div class="progress-log" id="prog-log"></div>
+  </div>
+
+  <!-- Results -->
+  <div class="pipeline-card" id="pipe-results-card">
+    <div class="pipeline-card-header">
+      <span class="step-num">3</span>
+      <div style="flex:1">
+        <h2>Results</h2>
+        <p id="results-subtitle">Run a search to see leads here</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadDashboardResults()">Refresh</button>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Business</th>
+            <th>Email</th>
+            <th>Decision Maker</th>
+            <th>Grade</th>
+            <th>Rating</th>
+          </tr>
+        </thead>
+        <tbody id="dash-results-tbody">
+          <tr><td colspan="5"><div class="empty-state"><div class="icon">🗺️</div>Enter a keyword and location above, then hit <strong>Run Pipeline</strong>.</div></td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 

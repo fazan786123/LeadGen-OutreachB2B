@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     max_emails_per_day: int = 50
 
     class Config:
-        env_file = ".env"
+        env_file = (".env", "../.env")
 
     @property
     def hunter_api_keys(self) -> list[str]:

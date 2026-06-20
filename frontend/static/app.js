@@ -63,37 +63,273 @@ function openModal(html) {
   return overlay;
 }
 
-// ── Dashboard page ─────────────────────────────────────────────────────
+// ── Dashboard / Pipeline page ──────────────────────────────────────────
+let _pipePollInterval = null;
+let _pipeRunning = false;
+
 async function initDashboard() {
+  // Mode card selection
+  document.querySelectorAll('.mode-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      card.querySelector('input').checked = true;
+      const mode = card.dataset.mode;
+      document.getElementById('mode-options-quick').classList.toggle('hidden', mode !== 'quick');
+      document.getElementById('mode-options-grid').classList.toggle('hidden', mode === 'quick');
+    });
+  });
+
+  await loadDashboardStats();
+  await loadDashboardResults();
+}
+
+async function loadDashboardStats() {
   try {
     const data = await api('GET', '/api/dashboard/stats');
-    const L = data.leads, E = data.emails;
+    const L = data.leads;
+    document.getElementById('mini-total').textContent = L.total;
+    document.getElementById('mini-email').textContent = L.with_email;
+    const validData = await api('GET', '/api/leads?email_grade=valid&limit=1');
+    const validEl = document.getElementById('mini-valid');
+    if (validEl) validEl.textContent = validData.total;
+  } catch (_) { /* stats optional on first load */ }
+}
 
-    document.getElementById('stat-total-leads').textContent = L.total;
-    document.getElementById('stat-with-email').textContent = L.with_email;
-    document.getElementById('stat-contacted').textContent = L.contacted;
-    document.getElementById('stat-replied').textContent = L.replied;
-    document.getElementById('stat-converted').textContent = L.converted;
-    document.getElementById('stat-sent-today').textContent = E.sent_today;
-    document.getElementById('stat-total-sent').textContent = E.total_sent;
-    document.getElementById('stat-failed').textContent = E.total_failed;
-
-    // 7-day chart
-    const chart = data.charts.emails_last_7_days;
-    const max = Math.max(...chart.map(d => d.sent), 1);
-    const bars = document.getElementById('chart-bars');
-    const labels = document.getElementById('chart-labels');
-    bars.innerHTML = '';
-    labels.innerHTML = '';
-    chart.forEach(d => {
-      const pct = Math.round((d.sent / max) * 100);
-      bars.innerHTML += `<div class="chart-bar" style="height:${pct}%" data-val="${d.sent}"></div>`;
-      labels.innerHTML += `<div class="chart-label">${d.date}</div>`;
-    });
+async function loadDashboardResults() {
+  try {
+    const data = await api('GET', '/api/leads?limit=20');
+    renderDashboardResults(data.leads, data.total);
   } catch (e) {
-    toast('Failed to load stats: ' + e.message, 'error');
+    toast('Failed to load results: ' + e.message, 'error');
   }
 }
+
+function renderDashboardResults(leads, total) {
+  const tbody = document.getElementById('dash-results-tbody');
+  const sub = document.getElementById('results-subtitle');
+  if (sub) sub.textContent = total ? `${total} leads in database — showing latest ${Math.min(20, total)}` : 'Run a search to see leads here';
+
+  if (!leads.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">🗺️</div>Enter a keyword and location above, then hit <strong>Run Pipeline</strong>.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = leads.map(l => `
+    <tr>
+      <td>
+        <strong>${esc(l.business_name)}</strong>
+        <br><small style="color:var(--text2)">${esc(l.address || '')}</small>
+      </td>
+      <td>
+        ${l.decision_maker_email
+          ? `<span style="color:var(--accent2)">${esc(l.decision_maker_email)}</span>${sourceBadge(l.email_source)}`
+          : badge(l.email_status)}
+      </td>
+      <td>${l.decision_maker_name ? esc(l.decision_maker_name) + (l.decision_maker_title ? `<br><small style="color:var(--text2)">${esc(l.decision_maker_title)}</small>` : '') : '—'}</td>
+      <td>${gradeBadge(l.email_grade, l.email_valid_reason)}</td>
+      <td>${l.rating ? '⭐ ' + l.rating : '—'}</td>
+    </tr>
+  `).join('');
+}
+
+function pipeLog(msg, type = '') {
+  const log = document.getElementById('prog-log');
+  if (!log) return;
+  const line = document.createElement('span');
+  line.className = 'log-line ' + type;
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+
+function setPipeStep(step, state) {
+  const el = document.querySelector(`.pipe-step[data-step="${step}"]`);
+  if (el) { el.classList.remove('active', 'done'); if (state) el.classList.add(state); }
+}
+
+function setPipeProgress(pct, title, subtitle, detail) {
+  const bar = document.getElementById('prog-bar');
+  const card = document.getElementById('pipe-progress-card');
+  if (card) card.classList.remove('hidden');
+  if (bar) bar.style.width = pct + '%';
+  if (title) document.getElementById('prog-title').textContent = title;
+  if (subtitle) document.getElementById('prog-subtitle').textContent = subtitle;
+  if (detail !== undefined) document.getElementById('prog-detail').textContent = detail;
+}
+
+async function runPipeline() {
+  if (_pipeRunning) return;
+
+  const keyword = document.getElementById('pipe-keyword').value.trim();
+  const location = document.getElementById('pipe-location').value.trim();
+  if (!keyword || !location) {
+    toast('Please enter a business type and location', 'error');
+    return;
+  }
+
+  const mode = document.querySelector('input[name="search-mode"]:checked').value;
+  const findPeople = document.getElementById('pipe-find-people').checked;
+  const findEmails = document.getElementById('pipe-find-emails').checked;
+  const validate = document.getElementById('pipe-validate').checked;
+
+  _pipeRunning = true;
+  const btn = document.getElementById('pipe-run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+
+  document.getElementById('prog-log').innerHTML = '';
+  document.querySelectorAll('.pipe-step').forEach(s => s.classList.remove('active', 'done'));
+  document.querySelectorAll('.pipe-step-line').forEach(l => l.classList.remove('done'));
+
+  try {
+    // ── Step 1: Google Maps search ──────────────────────────────────
+    setPipeStep('search', 'active');
+    setPipeProgress(5, 'Searching Google Maps…', `${keyword} in ${location}`, 'Connecting to Maps API…');
+    pipeLog(`Starting ${mode} search: "${keyword}" in ${location}`, 'info');
+
+    let added = 0;
+    if (mode === 'quick') {
+      const max = parseInt(document.getElementById('pipe-max-quick').value) || 20;
+      const res = await api('POST', '/api/leads/scrape', { keyword, location, max_results: max });
+      added = res.added;
+      pipeLog(`Maps search done — ${res.added} new leads (${res.skipped} duplicates skipped)`, 'ok');
+      setPipeProgress(25, 'Search complete', `${added} new leads added`, `Found ${res.total_found} businesses total`);
+    } else {
+      const squareSize = parseInt(document.getElementById('pipe-grid-size').value) || 2000;
+      const maxItems = parseInt(document.getElementById('pipe-max-grid').value) || 0;
+      const res = await api('POST', '/api/leads/scrape-grid', {
+        keyword, location, square_size: squareSize, mode, max_items: maxItems,
+      });
+      pipeLog(`Grid job #${res.job_id} started — ${res.viewports_total} viewports`, 'info');
+      added = await _pollGridJob(res.job_id);
+    }
+
+    setPipeStep('search', 'done');
+    document.querySelector('.pipe-step-line')?.classList.add('done');
+    await loadDashboardResults();
+    await loadDashboardStats();
+
+    // ── Step 2: Find decision makers ────────────────────────────────
+    if (findPeople) {
+      setPipeStep('people', 'active');
+      setPipeProgress(40, 'Finding decision makers…', 'Brave Search', 'Looking up owners & CEOs…');
+      pipeLog('Queuing Brave Search for decision makers…', 'info');
+      const res = await api('POST', '/api/leads/find-persons-bulk');
+      pipeLog(res.message, res.queued ? 'ok' : 'info');
+      await _waitForBulk('people', 50, 70);
+      setPipeStep('people', 'done');
+      document.querySelectorAll('.pipe-step-line')[1]?.classList.add('done');
+      await loadDashboardResults();
+    } else {
+      pipeLog('Skipped decision-maker lookup', 'info');
+    }
+
+    // ── Step 3: Find emails ─────────────────────────────────────────
+    if (findEmails) {
+      setPipeStep('emails', 'active');
+      setPipeProgress(72, 'Finding emails…', 'Running email finder chain', 'Apollo → Snov → Hunter…');
+      pipeLog('Queuing email finder chain…', 'info');
+      const res = await api('POST', '/api/leads/find-emails-bulk');
+      pipeLog(res.message, res.queued ? 'ok' : 'info');
+      await _waitForBulk('emails', 72, 88);
+      setPipeStep('emails', 'done');
+      document.querySelectorAll('.pipe-step-line')[2]?.classList.add('done');
+      await loadDashboardResults();
+      await loadDashboardStats();
+    } else {
+      pipeLog('Skipped email finder', 'info');
+    }
+
+    // ── Step 4: Validate emails ─────────────────────────────────────
+    if (validate) {
+      setPipeStep('validate', 'active');
+      setPipeProgress(90, 'Validating emails…', 'SMTP + format checks', 'This may take a minute…');
+      pipeLog('Queuing email validation…', 'info');
+      const res = await api('POST', '/api/leads/validate-emails-bulk');
+      pipeLog(res.message, res.queued ? 'ok' : 'info');
+      await _waitForBulk('validate', 90, 98);
+      setPipeStep('validate', 'done');
+      document.querySelectorAll('.pipe-step-line')[3]?.classList.add('done');
+      await loadDashboardResults();
+    } else {
+      pipeLog('Skipped validation', 'info');
+    }
+
+    setPipeProgress(100, 'Pipeline complete ✓', `${added} new leads from this run`, 'All steps finished');
+    document.getElementById('prog-icon').textContent = '✓';
+    document.getElementById('prog-icon').classList.add('active');
+    pipeLog('Pipeline finished successfully', 'ok');
+    toast(`Pipeline complete — ${added} new leads added`, 'success');
+
+  } catch (e) {
+    setPipeProgress(0, 'Pipeline failed', e.message, '');
+    pipeLog('Error: ' + e.message, 'err');
+    toast('Pipeline error: ' + e.message, 'error');
+  } finally {
+    _pipeRunning = false;
+    btn.disabled = false;
+    btn.textContent = '▶ Run Pipeline';
+    await loadDashboardStats();
+    await loadDashboardResults();
+  }
+}
+
+function _pollGridJob(jobId) {
+  return new Promise((resolve, reject) => {
+    let added = 0;
+    _gridPollInterval = setInterval(async () => {
+      try {
+        const job = await api('GET', `/api/leads/scrape-jobs/${jobId}`);
+        const pct = Math.min(24, Math.round((job.progress_pct || 0) * 0.24));
+        setPipeProgress(pct, 'Searching Google Maps…', `Viewport ${job.viewports_done} / ${job.viewports_total}`, `${job.leads_found} businesses found so far`);
+
+        if (job.status === 'done') {
+          clearInterval(_gridPollInterval);
+          added = job.leads_added;
+          pipeLog(`Grid search done — ${job.leads_added} new leads (${job.leads_found - job.leads_added} duplicates)`, 'ok');
+          resolve(added);
+        } else if (job.status === 'failed') {
+          clearInterval(_gridPollInterval);
+          reject(new Error(job.error || 'Grid scrape failed'));
+        }
+      } catch (e) {
+        clearInterval(_gridPollInterval);
+        reject(e);
+      }
+    }, 3000);
+  });
+}
+
+async function _waitForBulk(step, pctStart, pctEnd) {
+  // Background tasks have no progress API — poll lead counts until stable or timeout
+  const maxWait = step === 'validate' ? 120000 : 180000;
+  const interval = 4000;
+  const start = Date.now();
+  let lastCount = -1;
+  let stableRounds = 0;
+
+  while (Date.now() - start < maxWait) {
+    await new Promise(r => setTimeout(r, interval));
+    const elapsed = Date.now() - start;
+    const pct = pctStart + Math.min(pctEnd - pctStart, (elapsed / maxWait) * (pctEnd - pctStart));
+    setPipeProgress(Math.round(pct), document.getElementById('prog-title').textContent, 'Processing in background…', `Elapsed ${Math.round(elapsed / 1000)}s`);
+
+    try {
+      const data = await api('GET', '/api/leads?limit=1');
+      const count = data.total;
+      if (count === lastCount) {
+        stableRounds++;
+        if (stableRounds >= 3) break;
+      } else {
+        stableRounds = 0;
+        lastCount = count;
+      }
+      await loadDashboardResults();
+    } catch (_) { break; }
+  }
+}
+
 
 // ── Leads page ────────────────────────────────────────────────────────
 let leadsPage = { skip: 0, limit: 50 };
