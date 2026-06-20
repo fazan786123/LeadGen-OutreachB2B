@@ -52,10 +52,20 @@
       </div>
     </div>
 
-    <div class="form-grid" style="grid-template-columns:1fr 1fr auto;">
+    <div class="form-grid" style="grid-template-columns:1fr 1fr;">
       <div class="form-group">
-        <label class="form-label">Max results <small style="color:var(--text2)">(0 = unlimited)</small></label>
-        <input id="pipe-max-results" class="form-control" type="number" value="100" min="0">
+        <div class="slider-header">
+          <label class="form-label">Max results</label>
+          <span class="slider-value" id="pipe-max-label">100</span>
+        </div>
+        <div class="slider-wrap">
+          <input id="pipe-max-results" class="range-slider" type="range" min="10" max="500" step="10" value="100">
+          <div class="slider-ticks"><span>10</span><span>250</span><span>500</span></div>
+        </div>
+        <label class="slider-unlimited">
+          <input type="checkbox" id="pipe-max-unlimited">
+          <span>No limit</span>
+        </label>
       </div>
       <div class="form-group">
         <label class="form-label">Search radius</label>

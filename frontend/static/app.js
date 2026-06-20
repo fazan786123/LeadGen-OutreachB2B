@@ -68,8 +68,36 @@ let _pipePollInterval = null;
 let _pipeRunning = false;
 
 async function initDashboard() {
+  initMaxResultsSlider();
   await loadDashboardStats();
   await loadDashboardResults();
+}
+
+function initMaxResultsSlider() {
+  const slider = document.getElementById('pipe-max-results');
+  const label = document.getElementById('pipe-max-label');
+  const unlimited = document.getElementById('pipe-max-unlimited');
+  if (!slider || !label) return;
+
+  function updateLabel() {
+    if (unlimited?.checked) {
+      label.textContent = '∞';
+      label.classList.add('unlimited');
+      slider.disabled = true;
+    } else {
+      label.textContent = slider.value;
+      label.classList.remove('unlimited');
+      slider.disabled = false;
+    }
+  }
+
+  slider.addEventListener('input', updateLabel);
+  unlimited?.addEventListener('change', updateLabel);
+}
+
+function getMaxResults() {
+  if (document.getElementById('pipe-max-unlimited')?.checked) return 0;
+  return parseInt(document.getElementById('pipe-max-results').value) || 100;
 }
 
 async function loadDashboardStats() {
@@ -159,7 +187,7 @@ async function runPipeline() {
   const findPeople = document.getElementById('pipe-find-people').checked;
   const findEmails = document.getElementById('pipe-find-emails').checked;
   const validate = document.getElementById('pipe-validate').checked;
-  const maxResults = parseInt(document.getElementById('pipe-max-results').value) || 0;
+  const maxResults = getMaxResults();
   const squareSize = parseInt(document.getElementById('pipe-radius').value) || 2000;
 
   _pipeRunning = true;
