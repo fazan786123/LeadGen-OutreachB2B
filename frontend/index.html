@@ -79,38 +79,6 @@
       </div>
     </div>
 
-    <div class="pipeline-card-header" style="margin-top:28px">
-      <span class="step-num">2</span>
-      <div>
-        <h2>Enrichment</h2>
-        <p>Run automatically after search completes</p>
-      </div>
-    </div>
-
-    <div class="enrich-toggles">
-      <label class="toggle-card">
-        <input type="checkbox" id="pipe-find-people" checked>
-        <div>
-          <strong>Find decision makers</strong>
-          <span>Brave Search — owner / CEO name & title</span>
-        </div>
-      </label>
-      <label class="toggle-card">
-        <input type="checkbox" id="pipe-find-emails" checked>
-        <div>
-          <strong>Find emails</strong>
-          <span>Website scrape → Apollo → Snov → Hunter</span>
-        </div>
-      </label>
-      <label class="toggle-card">
-        <input type="checkbox" id="pipe-validate" checked>
-        <div>
-          <strong>Validate emails</strong>
-          <span>SMTP + format checks — mark valid / risky / invalid</span>
-        </div>
-      </label>
-    </div>
-
     <div class="pipeline-actions">
       <button class="btn btn-primary btn-lg" id="pipe-run-btn" onclick="runPipeline()">
         ▶ Run Pipeline

@@ -184,9 +184,6 @@ async function runPipeline() {
     return;
   }
 
-  const findPeople = document.getElementById('pipe-find-people').checked;
-  const findEmails = document.getElementById('pipe-find-emails').checked;
-  const validate = document.getElementById('pipe-validate').checked;
   const maxResults = getMaxResults();
   const squareSize = parseInt(document.getElementById('pipe-radius').value) || 2000;
 
@@ -218,7 +215,7 @@ async function runPipeline() {
     await loadDashboardStats();
 
     // ── Step 2: Find decision makers ────────────────────────────────
-    if (findPeople) {
+    if (true) {
       setPipeStep('people', 'active');
       setPipeProgress(40, 'Finding decision makers…', 'Brave Search', 'Looking up owners & CEOs…');
       pipeLog('Queuing Brave Search for decision makers…', 'info');
@@ -233,7 +230,7 @@ async function runPipeline() {
     }
 
     // ── Step 3: Find emails ─────────────────────────────────────────
-    if (findEmails) {
+    if (true) {
       setPipeStep('emails', 'active');
       setPipeProgress(72, 'Finding emails…', 'Running email finder chain', 'Apollo → Snov → Hunter…');
       pipeLog('Queuing email finder chain…', 'info');
@@ -249,7 +246,7 @@ async function runPipeline() {
     }
 
     // ── Step 4: Validate emails ─────────────────────────────────────
-    if (validate) {
+    if (true) {
       setPipeStep('validate', 'active');
       setPipeProgress(90, 'Validating emails…', 'SMTP + format checks', 'This may take a minute…');
       pipeLog('Queuing email validation…', 'info');
