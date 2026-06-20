@@ -68,18 +68,6 @@ let _pipePollInterval = null;
 let _pipeRunning = false;
 
 async function initDashboard() {
-  // Mode card selection
-  document.querySelectorAll('.mode-card').forEach(card => {
-    card.addEventListener('click', () => {
-      document.querySelectorAll('.mode-card').forEach(c => c.classList.remove('active'));
-      card.classList.add('active');
-      card.querySelector('input').checked = true;
-      const mode = card.dataset.mode;
-      document.getElementById('mode-options-quick').classList.toggle('hidden', mode !== 'quick');
-      document.getElementById('mode-options-grid').classList.toggle('hidden', mode === 'quick');
-    });
-  });
-
   await loadDashboardStats();
   await loadDashboardResults();
 }
@@ -168,10 +156,10 @@ async function runPipeline() {
     return;
   }
 
-  const mode = document.querySelector('input[name="search-mode"]:checked').value;
   const findPeople = document.getElementById('pipe-find-people').checked;
   const findEmails = document.getElementById('pipe-find-emails').checked;
   const validate = document.getElementById('pipe-validate').checked;
+  const maxResults = parseInt(document.getElementById('pipe-max-results').value) || 0;
 
   _pipeRunning = true;
   const btn = document.getElementById('pipe-run-btn');
@@ -186,24 +174,14 @@ async function runPipeline() {
     // ── Step 1: Google Maps search ──────────────────────────────────
     setPipeStep('search', 'active');
     setPipeProgress(5, 'Searching Google Maps…', `${keyword} in ${location}`, 'Connecting to Maps API…');
-    pipeLog(`Starting ${mode} search: "${keyword}" in ${location}`, 'info');
+    pipeLog(`Starting search: "${keyword}" in ${location}${maxResults ? ` (max ${maxResults})` : ''}`, 'info');
 
     let added = 0;
-    if (mode === 'quick') {
-      const max = parseInt(document.getElementById('pipe-max-quick').value) || 20;
-      const res = await api('POST', '/api/leads/scrape', { keyword, location, max_results: max });
-      added = res.added;
-      pipeLog(`Maps search done — ${res.added} new leads (${res.skipped} duplicates skipped)`, 'ok');
-      setPipeProgress(25, 'Search complete', `${added} new leads added`, `Found ${res.total_found} businesses total`);
-    } else {
-      const squareSize = parseInt(document.getElementById('pipe-grid-size').value) || 2000;
-      const maxItems = parseInt(document.getElementById('pipe-max-grid').value) || 0;
-      const res = await api('POST', '/api/leads/scrape-grid', {
-        keyword, location, square_size: squareSize, mode, max_items: maxItems,
-      });
-      pipeLog(`Grid job #${res.job_id} started — ${res.viewports_total} viewports`, 'info');
-      added = await _pollGridJob(res.job_id);
-    }
+    const res = await api('POST', '/api/leads/scrape-grid', {
+      keyword, location, square_size: 2000, mode: 'grid', max_items: maxResults,
+    });
+    pipeLog(`Search job #${res.job_id} started`, 'info');
+    added = await _pollGridJob(res.job_id);
 
     setPipeStep('search', 'done');
     document.querySelector('.pipe-step-line')?.classList.add('done');

@@ -52,57 +52,9 @@
       </div>
     </div>
 
-    <div class="form-group">
-      <label class="form-label">Search mode</label>
-      <div class="mode-cards" id="mode-cards">
-        <label class="mode-card active" data-mode="quick">
-          <input type="radio" name="search-mode" value="quick" checked>
-          <div class="mode-card-body">
-            <strong>Quick Search</strong>
-            <span>Single Maps query · up to 60 results · ~30 sec</span>
-          </div>
-        </label>
-        <label class="mode-card" data-mode="grid">
-          <input type="radio" name="search-mode" value="grid">
-          <div class="mode-card-body">
-            <strong>Area Sweep</strong>
-            <span>36 viewports · up to 2,160 results · ~5 min</span>
-          </div>
-        </label>
-        <label class="mode-card" data-mode="deep">
-          <input type="radio" name="search-mode" value="deep">
-          <div class="mode-card-body">
-            <strong>Deep Sweep</strong>
-            <span>324 viewports · up to 19,440 results · ~30 min</span>
-          </div>
-        </label>
-      </div>
-    </div>
-
-    <div id="mode-options-quick" class="mode-options">
-      <div class="form-group" style="max-width:200px">
-        <label class="form-label">Max results</label>
-        <input id="pipe-max-quick" class="form-control" type="number" value="20" min="1" max="60">
-      </div>
-    </div>
-
-    <div id="mode-options-grid" class="mode-options hidden">
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label">Grid square size</label>
-          <select id="pipe-grid-size" class="form-control">
-            <option value="1000">1 km — dense city centre</option>
-            <option value="2000" selected>2 km — standard city</option>
-            <option value="3000">3 km — large city</option>
-            <option value="5000">5 km — metro area</option>
-            <option value="10000">10 km — entire region</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Max leads <small>(0 = unlimited)</small></label>
-          <input id="pipe-max-grid" class="form-control" type="number" value="0" min="0">
-        </div>
-      </div>
+    <div class="form-group" style="max-width:220px">
+      <label class="form-label">Max results <small style="color:var(--text2)">(0 = unlimited)</small></label>
+      <input id="pipe-max-results" class="form-control" type="number" value="100" min="0">
     </div>
 
     <div class="pipeline-card-header" style="margin-top:28px">
