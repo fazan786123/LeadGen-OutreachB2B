@@ -53,12 +53,18 @@ async def find_email_chain(domain: str, website: str = "") -> dict:
 
     # ── Tier 2: API providers (skip if no key configured) ─────────────
 
-    # Apollo.io
-    if settings.apollo_api_key:
+    # Apollo.io — rotates keys if credits run out
+    apollo_keys = settings.apollo_api_keys
+    if apollo_keys:
         tried.append("apollo")
-        result = await apollo_find(domain, settings.apollo_api_key)
-        if result["status"] == "found":
-            return {**result, "tried": tried}
+        for key in apollo_keys:
+            result = await apollo_find(domain, key)
+            if result["status"] == "found":
+                return {**result, "tried": tried}
+            if result["status"] == "not_found":
+                break
+            if not _should_retry_on_credits(result):
+                break
 
     # Snov.io — rotates accounts if credits run out
     snov_accounts = settings.snov_credentials
