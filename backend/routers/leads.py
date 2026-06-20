@@ -26,7 +26,8 @@ class GridScrapeRequest(BaseModel):
     keyword: str
     location: str
     square_size: int = 2000  # meters — 2000 covers ~12x12km, 5000 covers ~30x30km
-    mode: str = "grid"  # grid | deep
+    mode: str = "grid"       # grid (36 viewports) | deep (324 viewports, 9 centers)
+    max_items: int = 0       # 0 = unlimited, mirrors n8n's max_items param
 
 
 class LeadUpdate(BaseModel):
@@ -72,7 +73,7 @@ async def scrape_grid(req: GridScrapeRequest, background_tasks: BackgroundTasks,
         raise HTTPException(status_code=400, detail="GOOGLE_MAPS_API_KEY not set")
 
     is_deep = req.mode == "deep"
-    viewports_total = 216 if is_deep else 36
+    viewports_total = 324 if is_deep else 36   # 9 centers × 36 or 1 center × 36
     mode_label = "deep" if is_deep else "grid"
 
     job = ScrapeJob(
@@ -87,7 +88,7 @@ async def scrape_grid(req: GridScrapeRequest, background_tasks: BackgroundTasks,
     db.commit()
     db.refresh(job)
 
-    background_tasks.add_task(_run_grid_scrape, job.id, req.keyword, req.location, req.square_size, is_deep)
+    background_tasks.add_task(_run_grid_scrape, job.id, req.keyword, req.location, req.square_size, is_deep, req.max_items)
     msg = f"{'Deep Sweep' if is_deep else 'Grid scrape'} started — {viewports_total} viewports queued"
     return {"job_id": job.id, "message": msg, "viewports_total": viewports_total, "mode": mode_label}
 
@@ -129,7 +130,7 @@ def list_scrape_jobs(db: Session = Depends(get_db)):
     ]
 
 
-async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size: int, deep: bool = False):
+async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size: int, deep: bool = False, max_items: int = 0):
     from database import SessionLocal
     db = SessionLocal()
 
@@ -142,7 +143,7 @@ async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size
 
     try:
         fn = deep_search_businesses if deep else grid_search_businesses
-        businesses = await fn(keyword, location, settings.google_maps_api_key, square_size, _progress)
+        businesses = await fn(keyword, location, settings.google_maps_api_key, square_size, max_items, _progress)
 
         added, skipped = 0, 0
         for biz in businesses:
@@ -161,7 +162,7 @@ async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size
             job.status = "done"
             job.leads_added = added
             job.leads_found = len(businesses)
-            job.viewports_done = 36
+            job.viewports_done = job.viewports_total
             job.finished_at = datetime.utcnow()
             db.commit()
 

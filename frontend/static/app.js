@@ -253,10 +253,10 @@ function openGridScrapeModal() {
     <div class="modal-title">⚡ Grid Scraper</div>
     <div style="display:flex;gap:8px;margin-bottom:16px;">
       <button id="mode-grid" class="btn btn-primary btn-sm" onclick="setGridMode('grid')">Area Sweep <small>(36 viewports)</small></button>
-      <button id="mode-deep" class="btn btn-ghost btn-sm" onclick="setGridMode('deep')">🔥 Deep Sweep <small>(216 viewports)</small></button>
+      <button id="mode-deep" class="btn btn-ghost btn-sm" onclick="setGridMode('deep')">🔥 Deep Sweep <small>(324 viewports)</small></button>
     </div>
     <p id="mode-desc" style="color:var(--text2);font-size:13px;margin-bottom:16px">
-      36 viewport rectangles tiling the area — up to <strong style="color:var(--text)">720 raw results</strong>.
+      36 viewports × up to 60 results each (paginated) — up to <strong style="color:var(--text)">2,160 raw results</strong>.
     </p>
     <div class="form-group">
       <label class="form-label">Business type / keyword</label>
@@ -270,11 +270,15 @@ function openGridScrapeModal() {
       <label class="form-label">Grid square size</label>
       <select id="grid-size" class="form-control">
         <option value="1000">1 km — dense city centre</option>
-        <option value="2000" selected>2 km — standard city</option>
+        <option value="2000" selected>2 km — standard city (matches n8n default 3000/3×2)</option>
         <option value="3000">3 km — large city</option>
         <option value="5000">5 km — metro area</option>
         <option value="10000">10 km — entire region</option>
       </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Max leads to collect <small style="color:var(--text2)">(0 = unlimited)</small></label>
+      <input id="grid-max" class="form-control" type="number" value="0" min="0" placeholder="0 = no limit">
     </div>
     <div id="grid-progress-wrap" style="display:none;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
@@ -299,8 +303,8 @@ function setGridMode(mode) {
   document.getElementById('mode-grid').className = `btn btn-sm ${mode === 'grid' ? 'btn-primary' : 'btn-ghost'}`;
   document.getElementById('mode-deep').className = `btn btn-sm ${mode === 'deep' ? 'btn-primary' : 'btn-ghost'}`;
   document.getElementById('mode-desc').innerHTML = mode === 'deep'
-    ? '6 sweep centers × 36 viewports = 216 total — up to <strong style="color:var(--text)">4,320 raw results</strong>. Takes longer.'
-    : '36 viewport rectangles tiling the area — up to <strong style="color:var(--text)">720 raw results</strong>.';
+    ? '9 centers × 36 viewports × 60 results = 324 viewport calls — up to <strong style="color:var(--text)">19,440 raw results</strong>. Takes longer.'
+    : '36 viewports × up to 60 results each (paginated) — up to <strong style="color:var(--text)">2,160 raw results</strong>.';
 }
 
 let _gridPollInterval = null;
@@ -315,6 +319,7 @@ async function runGridScrape() {
       location: document.getElementById('grid-location').value,
       square_size: parseInt(document.getElementById('grid-size').value),
       mode: window._gridMode || 'grid',
+      max_items: parseInt(document.getElementById('grid-max').value) || 0,
     });
 
     document.getElementById('grid-progress-wrap').style.display = 'block';
