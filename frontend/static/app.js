@@ -160,6 +160,7 @@ async function runPipeline() {
   const findEmails = document.getElementById('pipe-find-emails').checked;
   const validate = document.getElementById('pipe-validate').checked;
   const maxResults = parseInt(document.getElementById('pipe-max-results').value) || 0;
+  const squareSize = parseInt(document.getElementById('pipe-radius').value) || 2000;
 
   _pipeRunning = true;
   const btn = document.getElementById('pipe-run-btn');
@@ -178,7 +179,7 @@ async function runPipeline() {
 
     let added = 0;
     const res = await api('POST', '/api/leads/scrape-grid', {
-      keyword, location, square_size: 2000, mode: 'grid', max_items: maxResults,
+      keyword, location, square_size: squareSize, mode: 'grid', max_items: maxResults,
     });
     pipeLog(`Search job #${res.job_id} started`, 'info');
     added = await _pollGridJob(res.job_id);

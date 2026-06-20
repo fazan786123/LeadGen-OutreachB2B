@@ -52,9 +52,21 @@
       </div>
     </div>
 
-    <div class="form-group" style="max-width:220px">
-      <label class="form-label">Max results <small style="color:var(--text2)">(0 = unlimited)</small></label>
-      <input id="pipe-max-results" class="form-control" type="number" value="100" min="0">
+    <div class="form-grid" style="grid-template-columns:1fr 1fr auto;">
+      <div class="form-group">
+        <label class="form-label">Max results <small style="color:var(--text2)">(0 = unlimited)</small></label>
+        <input id="pipe-max-results" class="form-control" type="number" value="100" min="0">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Search radius</label>
+        <select id="pipe-radius" class="form-control">
+          <option value="1000">1 km — dense city centre</option>
+          <option value="2000" selected>2 km — standard city</option>
+          <option value="3000">3 km — large city</option>
+          <option value="5000">5 km — metro area</option>
+          <option value="10000">10 km — entire region</option>
+        </select>
+      </div>
     </div>
 
     <div class="pipeline-card-header" style="margin-top:28px">
