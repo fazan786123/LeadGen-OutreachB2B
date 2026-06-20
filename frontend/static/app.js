@@ -97,7 +97,7 @@ function initMaxResultsSlider() {
 
 function getMaxResults() {
   if (document.getElementById('pipe-max-unlimited')?.checked) return 0;
-  return parseInt(document.getElementById('pipe-max-results').value) || 100;
+  return parseInt(document.getElementById('pipe-max-results').value) || 100;  // default 100
 }
 
 async function loadDashboardStats() {
