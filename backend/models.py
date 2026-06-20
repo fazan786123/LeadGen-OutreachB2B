@@ -1,0 +1,66 @@
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Float
+from sqlalchemy.orm import relationship
+from database import Base
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_name = Column(String(255), nullable=False)
+    address = Column(Text)
+    phone = Column(String(50))
+    website = Column(String(255))
+    domain = Column(String(255))
+    category = Column(String(255))
+    rating = Column(Float)
+    review_count = Column(Integer)
+    google_place_id = Column(String(255), unique=True, index=True)
+    maps_url = Column(String(500))
+    # Email finder results
+    decision_maker_name = Column(String(255))
+    decision_maker_email = Column(String(255))
+    decision_maker_title = Column(String(255))
+    email_confidence = Column(Integer)
+    email_status = Column(String(50), default="not_searched")  # not_searched | found | not_found | verified
+    # Lead status
+    status = Column(String(50), default="new")  # new | contacted | replied | converted | unsubscribed
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    email_logs = relationship("EmailLog", back_populates="lead")
+
+
+class Campaign(Base):
+    __tablename__ = "campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    subject = Column(String(500), nullable=False)
+    body = Column(Text, nullable=False)  # Jinja2 template — use {{ business_name }}, {{ decision_maker_name }}, etc.
+    status = Column(String(50), default="draft")  # draft | active | paused | completed
+    send_delay_seconds = Column(Integer, default=60)  # delay between sends to avoid spam
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    email_logs = relationship("EmailLog", back_populates="campaign")
+
+
+class EmailLog(Base):
+    __tablename__ = "email_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
+    to_email = Column(String(255), nullable=False)
+    subject = Column(String(500))
+    body_preview = Column(Text)
+    status = Column(String(50), default="pending")  # pending | sent | failed | bounced
+    error_message = Column(Text)
+    sent_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    lead = relationship("Lead", back_populates="email_logs")
+    campaign = relationship("Campaign", back_populates="email_logs")

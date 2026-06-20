@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data        # persistent SQLite DB
+      - ./.env:/app/.env:ro     # mount your .env
+    environment:
+      - DATABASE_URL=sqlite:///./data/leadgen.db
+    restart: unless-stopped

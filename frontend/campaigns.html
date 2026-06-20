@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campaigns — LeadGen B2B</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">LeadGen B2B<span>Outreach System</span></div>
+  <nav>
+    <a class="nav-link" href="/"><span class="icon">📊</span> Dashboard</a>
+    <a class="nav-link" href="/leads.html"><span class="icon">🏢</span> Leads</a>
+    <a class="nav-link active" href="/campaigns.html"><span class="icon">📧</span> Campaigns</a>
+    <a class="nav-link" href="/activity.html"><span class="icon">📋</span> Activity</a>
+  </nav>
+</div>
+
+<div class="main">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <div>
+      <div class="page-title">Campaigns</div>
+      <div class="page-sub">Create email templates and launch outreach</div>
+    </div>
+    <button class="btn btn-primary" onclick="openNewCampaignModal()">+ New Campaign</button>
+  </div>
+
+  <div class="card">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Subject</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="campaigns-tbody">
+          <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text2)">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px;">
+    <div style="font-size:14px;font-weight:600;margin-bottom:12px;">Template Variables</div>
+    <div style="color:var(--text2);font-size:13px;font-family:monospace;line-height:1.8;">
+      <code>{{ business_name }}</code> — business name from Google Maps<br>
+      <code>{{ decision_maker_name }}</code> — contact name from Hunter.io<br>
+      <code>{{ decision_maker_title }}</code> — job title<br>
+      <code>{{ website }}</code> — business website<br>
+      <code>{{ address }}</code> — business address<br>
+      <code>{{ phone }}</code> — phone number<br>
+      <code>{{ category }}</code> — business category<br>
+      <code>{{ decision_maker_name or 'there' }}</code> — fallback if name is missing
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/app.js"></script>
+<script>initCampaigns();</script>
+</body>
+</html>

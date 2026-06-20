@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LeadGen Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">LeadGen B2B<span>Outreach System</span></div>
+  <nav>
+    <a class="nav-link active" href="/"><span class="icon">📊</span> Dashboard</a>
+    <a class="nav-link" href="/leads.html"><span class="icon">🏢</span> Leads</a>
+    <a class="nav-link" href="/campaigns.html"><span class="icon">📧</span> Campaigns</a>
+    <a class="nav-link" href="/activity.html"><span class="icon">📋</span> Activity</a>
+  </nav>
+</div>
+
+<div class="main">
+  <div class="page-title">Dashboard</div>
+  <div class="page-sub">Overview of your lead gen pipeline</div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Leads</div>
+      <div class="stat-value purple" id="stat-total-leads">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">With Email</div>
+      <div class="stat-value green" id="stat-with-email">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Contacted</div>
+      <div class="stat-value" id="stat-contacted">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Replied</div>
+      <div class="stat-value yellow" id="stat-replied">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Converted</div>
+      <div class="stat-value green" id="stat-converted">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Sent Today</div>
+      <div class="stat-value" id="stat-sent-today">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Sent</div>
+      <div class="stat-value" id="stat-total-sent">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Failed</div>
+      <div class="stat-value" style="color:var(--danger)" id="stat-failed">—</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="font-size:14px;font-weight:600;margin-bottom:16px;">Emails sent — last 7 days</div>
+    <div class="chart-bar-wrap" id="chart-bars"></div>
+    <div class="chart-labels" id="chart-labels" style="margin-top:6px;"></div>
+  </div>
+
+  <div style="margin-top:20px;display:flex;gap:12px;">
+    <a href="/leads.html" class="btn btn-primary">Go to Leads →</a>
+    <a href="/campaigns.html" class="btn btn-ghost">Manage Campaigns →</a>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/app.js"></script>
+<script>initDashboard();</script>
+</body>
+</html>

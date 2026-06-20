@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Leads — LeadGen B2B</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">LeadGen B2B<span>Outreach System</span></div>
+  <nav>
+    <a class="nav-link" href="/"><span class="icon">📊</span> Dashboard</a>
+    <a class="nav-link active" href="/leads.html"><span class="icon">🏢</span> Leads</a>
+    <a class="nav-link" href="/campaigns.html"><span class="icon">📧</span> Campaigns</a>
+    <a class="nav-link" href="/activity.html"><span class="icon">📋</span> Activity</a>
+  </nav>
+</div>
+
+<div class="main">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <div>
+      <div class="page-title">Leads</div>
+      <div class="page-sub" id="leads-count">Loading...</div>
+    </div>
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-ghost" onclick="bulkFindEmails()">🔍 Bulk Find Emails</button>
+      <button class="btn btn-primary" onclick="openScrapeModal()">+ Scrape Google Maps</button>
+    </div>
+  </div>
+
+  <div class="search-bar">
+    <input id="search-input" class="form-control" placeholder="Search by name, address, email...">
+    <select id="filter-status" class="form-control">
+      <option value="">All statuses</option>
+      <option value="new">New</option>
+      <option value="contacted">Contacted</option>
+      <option value="replied">Replied</option>
+      <option value="converted">Converted</option>
+      <option value="unsubscribed">Unsubscribed</option>
+    </select>
+    <select id="filter-email-status" class="form-control">
+      <option value="">All email statuses</option>
+      <option value="found">Email Found</option>
+      <option value="not_found">Email Not Found</option>
+      <option value="not_searched">Not Searched</option>
+    </select>
+    <button class="btn btn-ghost" onclick="loadLeads()">Refresh</button>
+  </div>
+
+  <div class="card">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Business</th>
+            <th>Domain</th>
+            <th>Email Status</th>
+            <th>Decision Maker</th>
+            <th>Confidence</th>
+            <th>Status</th>
+            <th>Rating</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="leads-tbody">
+          <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text2)">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/app.js"></script>
+<script>initLeads();</script>
+</body>
+</html>

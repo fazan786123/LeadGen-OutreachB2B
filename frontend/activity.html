@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Activity — LeadGen B2B</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">LeadGen B2B<span>Outreach System</span></div>
+  <nav>
+    <a class="nav-link" href="/"><span class="icon">📊</span> Dashboard</a>
+    <a class="nav-link" href="/leads.html"><span class="icon">🏢</span> Leads</a>
+    <a class="nav-link" href="/campaigns.html"><span class="icon">📧</span> Campaigns</a>
+    <a class="nav-link active" href="/activity.html"><span class="icon">📋</span> Activity</a>
+  </nav>
+</div>
+
+<div class="main">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <div>
+      <div class="page-title">Activity</div>
+      <div class="page-sub" id="logs-count">Email send log</div>
+    </div>
+    <button class="btn btn-ghost" onclick="loadLogs()">Refresh</button>
+  </div>
+
+  <div class="card">
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>To</th>
+            <th>Subject</th>
+            <th>Status</th>
+            <th>Sent At</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody id="logs-tbody">
+          <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text2)">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+<script src="/static/app.js"></script>
+<script>initActivity();</script>
+</body>
+</html>
