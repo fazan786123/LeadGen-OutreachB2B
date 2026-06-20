@@ -19,6 +19,14 @@ from services.pattern_guesser import guess_email_for_domain
 from services.email_finder import apollo_find, snov_find, skrapp_find, findthat_find, hunter_find
 
 
+def _should_retry_on_credits(result: dict) -> bool:
+    """Try the next API key/account when credits or rate limits are exhausted."""
+    if result["status"] != "error":
+        return False
+    err = str(result.get("error", "")).lower()
+    return any(x in err for x in ("credit", "limit", "429", "quota", "exhausted"))
+
+
 async def find_email_chain(domain: str, website: str = "") -> dict:
     """
     Run the full email finder chain for a domain.
@@ -52,12 +60,18 @@ async def find_email_chain(domain: str, website: str = "") -> dict:
         if result["status"] == "found":
             return {**result, "tried": tried}
 
-    # Snov.io
-    if settings.snov_client_id and settings.snov_client_secret:
+    # Snov.io — rotates accounts if credits run out
+    snov_accounts = settings.snov_credentials
+    if snov_accounts:
         tried.append("snov")
-        result = await snov_find(domain, settings.snov_client_id, settings.snov_client_secret)
-        if result["status"] == "found":
-            return {**result, "tried": tried}
+        for client_id, client_secret in snov_accounts:
+            result = await snov_find(domain, client_id, client_secret)
+            if result["status"] == "found":
+                return {**result, "tried": tried}
+            if result["status"] == "not_found":
+                break
+            if not _should_retry_on_credits(result):
+                break
 
     # Skrapp.io
     if settings.skrapp_api_key:
@@ -73,11 +87,17 @@ async def find_email_chain(domain: str, website: str = "") -> dict:
         if result["status"] == "found":
             return {**result, "tried": tried}
 
-    # Hunter.io — last resort (fewest free credits)
-    if settings.hunter_api_key:
+    # Hunter.io — last resort (fewest free credits); rotates keys if credits run out
+    hunter_keys = settings.hunter_api_keys
+    if hunter_keys:
         tried.append("hunter")
-        result = await hunter_find(domain, settings.hunter_api_key)
-        if result["status"] == "found":
-            return {**result, "tried": tried}
+        for key in hunter_keys:
+            result = await hunter_find(domain, key)
+            if result["status"] == "found":
+                return {**result, "tried": tried}
+            if result["status"] == "not_found":
+                break
+            if not _should_retry_on_credits(result):
+                break
 
     return {"status": "not_found", "source": None, "tried": tried}

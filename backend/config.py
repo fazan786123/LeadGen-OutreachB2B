@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     brave_api_key: str = ""
 
     # Email finder API keys — add whichever you have, chain skips missing ones
-    hunter_api_key: str = ""        # 25 free/month  — hunter.io
+    hunter_api_key: str = ""        # 25 free/month per key — hunter.io (comma-separate for multiple)
     apollo_api_key: str = ""        # 50 free/month  — apollo.io
-    snov_client_id: str = ""        # 50 free/month  — snov.io (needs id + secret)
+    snov_client_id: str = ""        # 50 free/month per account — snov.io (comma-separate for multiple)
     snov_client_secret: str = ""
     skrapp_api_key: str = ""        # 100 free/month — skrapp.io
     findthat_api_key: str = ""      # 50 free/month  — findthat.email
@@ -26,6 +26,16 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
+    @property
+    def hunter_api_keys(self) -> list[str]:
+        return [k.strip() for k in self.hunter_api_key.split(",") if k.strip()]
+
+    @property
+    def snov_credentials(self) -> list[tuple[str, str]]:
+        ids = [k.strip() for k in self.snov_client_id.split(",") if k.strip()]
+        secrets = [k.strip() for k in self.snov_client_secret.split(",") if k.strip()]
+        return [(i, s) for i, s in zip(ids, secrets) if i and s]
 
 
 @lru_cache
