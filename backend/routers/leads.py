@@ -10,6 +10,7 @@ from models import Lead
 from config import get_settings
 from services.google_maps import search_businesses
 from services.email_finder import find_emails_for_domain
+from services.email_validator import validate_email, validate_emails_bulk
 
 router = APIRouter(prefix="/api/leads", tags=["leads"])
 settings = get_settings()
@@ -127,6 +128,7 @@ async def _bulk_email_search(lead_ids: list[int]):
 def list_leads(
     status: Optional[str] = None,
     email_status: Optional[str] = None,
+    email_grade: Optional[str] = None,
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = Query(default=50, le=200),
@@ -137,6 +139,8 @@ def list_leads(
         q = q.filter(Lead.status == status)
     if email_status:
         q = q.filter(Lead.email_status == email_status)
+    if email_grade:
+        q = q.filter(Lead.email_grade == email_grade)
     if search:
         q = q.filter(or_(
             Lead.business_name.ilike(f"%{search}%"),
@@ -179,6 +183,66 @@ def delete_lead(lead_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.post("/{lead_id}/validate-email")
+async def validate_lead_email(lead_id: int, db: Session = Depends(get_db)):
+    """Run full validation pipeline on a single lead's email."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    if not lead.decision_maker_email:
+        raise HTTPException(status_code=400, detail="Lead has no email to validate")
+
+    result = await validate_email(lead.decision_maker_email)
+
+    lead.email_grade = result["grade"]
+    lead.email_valid_reason = result["reason"]
+    lead.email_validated_at = datetime.utcnow()
+    lead.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(lead)
+    return {"grade": result["grade"], "reason": result["reason"], "checks": result["checks"], "lead": _lead_dict(lead)}
+
+
+@router.post("/validate-emails-bulk")
+async def validate_emails_bulk_endpoint(
+    background_tasks: BackgroundTasks,
+    grade_filter: Optional[str] = None,  # only re-validate leads with this grade (or None = all unvalidated)
+    db: Session = Depends(get_db),
+):
+    """Queue email validation for all leads that have an email but no grade yet."""
+    q = db.query(Lead).filter(Lead.decision_maker_email.isnot(None))
+    if grade_filter:
+        q = q.filter(Lead.email_grade == grade_filter)
+    else:
+        q = q.filter(Lead.email_grade.is_(None))
+
+    leads = q.all()
+    if not leads:
+        return {"message": "No leads to validate", "queued": 0}
+
+    pairs = [(l.id, l.decision_maker_email) for l in leads]
+    background_tasks.add_task(_bulk_validate_bg, pairs)
+    return {"message": f"Queued {len(leads)} leads for validation", "queued": len(leads)}
+
+
+async def _bulk_validate_bg(pairs: list[tuple[int, str]]):
+    from database import SessionLocal
+    results = await validate_emails_bulk(pairs)
+    db = SessionLocal()
+    try:
+        for r in results:
+            lead = db.query(Lead).filter(Lead.id == r["lead_id"]).first()
+            if not lead:
+                continue
+            lead.email_grade = r["grade"]
+            lead.email_valid_reason = r["reason"]
+            lead.email_validated_at = datetime.utcnow()
+            lead.updated_at = datetime.utcnow()
+        db.commit()
+    finally:
+        db.close()
+
+
 def _lead_dict(lead: Lead) -> dict:
     return {
         "id": lead.id,
@@ -196,6 +260,9 @@ def _lead_dict(lead: Lead) -> dict:
         "decision_maker_title": lead.decision_maker_title,
         "email_confidence": lead.email_confidence,
         "email_status": lead.email_status,
+        "email_grade": lead.email_grade,
+        "email_valid_reason": lead.email_valid_reason,
+        "email_validated_at": lead.email_validated_at.isoformat() if lead.email_validated_at else None,
         "status": lead.status,
         "notes": lead.notes,
         "created_at": lead.created_at.isoformat() if lead.created_at else None,

@@ -23,7 +23,11 @@ class Lead(Base):
     decision_maker_email = Column(String(255))
     decision_maker_title = Column(String(255))
     email_confidence = Column(Integer)
-    email_status = Column(String(50), default="not_searched")  # not_searched | found | not_found | verified
+    email_status = Column(String(50), default="not_searched")  # not_searched | found | not_found
+    # Email validation
+    email_grade = Column(String(20))       # valid | risky | invalid | None (not validated)
+    email_valid_reason = Column(String(100))
+    email_validated_at = Column(DateTime)
     # Lead status
     status = Column(String(50), default="new")  # new | contacted | replied | converted | unsubscribed
     notes = Column(Text)

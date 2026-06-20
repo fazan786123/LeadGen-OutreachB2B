@@ -57,6 +57,16 @@ async def send_campaign(req: SendRequest, background_tasks: BackgroundTasks, db:
     if not leads:
         raise HTTPException(status_code=400, detail="No eligible leads found (need email + matching status)")
 
+    # Block leads with invalid emails — only send to valid or risky (or unvalidated)
+    skipped_invalid = [l for l in leads if l.email_grade == "invalid"]
+    leads = [l for l in leads if l.email_grade != "invalid"]
+
+    if not leads:
+        raise HTTPException(
+            status_code=400,
+            detail=f"All {len(skipped_invalid)} leads were blocked — email grade is 'invalid'. Run validation first or check emails manually."
+        )
+
     # Check daily cap
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     sent_today = db.query(EmailLog).filter(
@@ -95,6 +105,7 @@ async def send_campaign(req: SendRequest, background_tasks: BackgroundTasks, db:
 
     return {
         "queued": len(log_ids),
+        "skipped_invalid": len(skipped_invalid),
         "capped_at": settings.max_emails_per_day,
         "sent_today_before": sent_today,
         "message": f"Sending {len(log_ids)} emails in background with {campaign.send_delay_seconds}s delay between each",

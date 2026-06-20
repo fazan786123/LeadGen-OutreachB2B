@@ -26,6 +26,7 @@
     </div>
     <div style="display:flex;gap:10px;">
       <button class="btn btn-ghost" onclick="bulkFindEmails()">🔍 Bulk Find Emails</button>
+      <button class="btn btn-warn" onclick="bulkValidateEmails()">✓ Validate All Emails</button>
       <button class="btn btn-primary" onclick="openScrapeModal()">+ Scrape Google Maps</button>
     </div>
   </div>
@@ -46,6 +47,12 @@
       <option value="not_found">Email Not Found</option>
       <option value="not_searched">Not Searched</option>
     </select>
+    <select id="filter-grade" class="form-control">
+      <option value="">All grades</option>
+      <option value="valid">✓ Valid</option>
+      <option value="risky">⚠ Risky</option>
+      <option value="invalid">✕ Invalid</option>
+    </select>
     <button class="btn btn-ghost" onclick="loadLeads()">Refresh</button>
   </div>
 
@@ -58,7 +65,7 @@
             <th>Domain</th>
             <th>Email Status</th>
             <th>Decision Maker</th>
-            <th>Confidence</th>
+            <th>Validation</th>
             <th>Status</th>
             <th>Rating</th>
             <th>Actions</th>

@@ -30,6 +30,14 @@ function badge(val, prefix = '') {
   return `<span class="badge badge-${cls}">${val}</span>`;
 }
 
+function gradeBadge(grade, reason) {
+  if (!grade) return '<span class="grade-unknown" title="Not validated">?</span>';
+  const icons = { valid: '✓', risky: '⚠', invalid: '✕' };
+  const labels = { valid: 'Valid', risky: 'Risky', invalid: 'Invalid' };
+  const tip = reason ? reason.replace(/_/g, ' ') : grade;
+  return `<span class="grade-${grade}" title="${esc(tip)}">${icons[grade] || '?'} ${labels[grade] || grade}</span>`;
+}
+
 // ── Modal ──────────────────────────────────────────────────────────────
 function openModal(html) {
   const overlay = document.createElement('div');
@@ -81,17 +89,20 @@ async function initLeads() {
   document.getElementById('search-input').addEventListener('input', debounce(loadLeads, 400));
   document.getElementById('filter-status').addEventListener('change', loadLeads);
   document.getElementById('filter-email-status').addEventListener('change', loadLeads);
+  document.getElementById('filter-grade')?.addEventListener('change', loadLeads);
 }
 
 async function loadLeads() {
   const search = document.getElementById('search-input')?.value || '';
   const status = document.getElementById('filter-status')?.value || '';
   const emailStatus = document.getElementById('filter-email-status')?.value || '';
+  const grade = document.getElementById('filter-grade')?.value || '';
 
   const params = new URLSearchParams({ skip: leadsPage.skip, limit: leadsPage.limit });
   if (search) params.set('search', search);
   if (status) params.set('status', status);
   if (emailStatus) params.set('email_status', emailStatus);
+  if (grade) params.set('email_grade', grade);
 
   try {
     const data = await api('GET', `/api/leads?${params}`);
@@ -109,16 +120,17 @@ function renderLeadsTable(leads) {
     return;
   }
   tbody.innerHTML = leads.map(l => `
-    <tr>
+    <tr style="${l.email_grade === 'invalid' ? 'opacity:0.5' : ''}">
       <td><strong>${esc(l.business_name)}</strong><br><small style="color:var(--text2)">${esc(l.address || '')}</small></td>
       <td>${l.website ? `<a href="${esc(l.website)}" target="_blank" style="color:var(--accent)">${esc(l.domain || l.website)}</a>` : '—'}</td>
       <td>${badge(l.email_status)}</td>
       <td>${l.decision_maker_email ? `<strong>${esc(l.decision_maker_name || '')}</strong><br><small>${esc(l.decision_maker_email)}</small>` : '—'}</td>
-      <td>${l.email_confidence ? l.email_confidence + '%' : '—'}</td>
+      <td>${gradeBadge(l.email_grade, l.email_valid_reason)}</td>
       <td>${badge(l.status)}</td>
       <td>${l.rating ? '⭐ ' + l.rating : '—'}</td>
       <td>
         ${!l.decision_maker_email && l.domain ? `<button class="btn btn-sm btn-primary" onclick="findEmail(${l.id})">Find Email</button> ` : ''}
+        ${l.decision_maker_email && !l.email_grade ? `<button class="btn btn-sm btn-warn" onclick="validateEmail(${l.id})">Validate</button> ` : ''}
         <button class="btn btn-sm btn-ghost" onclick="editLead(${l.id})">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteLead(${l.id})">✕</button>
       </td>
@@ -238,6 +250,29 @@ async function bulkFindEmails() {
   try {
     toast('Queuing bulk email search...', 'info');
     const res = await api('POST', '/api/leads/find-emails-bulk');
+    toast(res.message, 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function validateEmail(leadId) {
+  try {
+    toast('Running validation checks...', 'info');
+    const res = await api('POST', `/api/leads/${leadId}/validate-email`);
+    const icons = { valid: '✓', risky: '⚠', invalid: '✕' };
+    const types = { valid: 'success', risky: 'info', invalid: 'error' };
+    toast(`${icons[res.grade] || '?'} ${res.grade.toUpperCase()} — ${(res.reason || '').replace(/_/g, ' ')}`, types[res.grade] || 'info');
+    await loadLeads();
+  } catch (e) {
+    toast('Validation error: ' + e.message, 'error');
+  }
+}
+
+async function bulkValidateEmails() {
+  try {
+    toast('Queuing bulk email validation (SMTP checks)...', 'info');
+    const res = await api('POST', '/api/leads/validate-emails-bulk');
     toast(res.message, 'success');
   } catch (e) {
     toast('Error: ' + e.message, 'error');
