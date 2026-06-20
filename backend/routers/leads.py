@@ -11,6 +11,7 @@ from config import get_settings
 from services.google_maps import search_businesses, grid_search_businesses, deep_search_businesses
 from services.email_chain import find_email_chain
 from services.email_validator import validate_email, validate_emails_bulk
+from services.people_finder import find_decision_maker
 
 router = APIRouter(prefix="/api/leads", tags=["leads"])
 settings = get_settings()
@@ -173,6 +174,69 @@ async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size
             job.error = str(e)
             job.finished_at = datetime.utcnow()
             db.commit()
+    finally:
+        db.close()
+
+
+@router.post("/{lead_id}/find-person")
+async def find_person(lead_id: int, db: Session = Depends(get_db)):
+    """Use Brave Search to find the decision-maker name + title for a single lead."""
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    if not settings.brave_api_key:
+        raise HTTPException(status_code=400, detail="BRAVE_API_KEY not set")
+
+    result = await find_decision_maker(
+        business_name=lead.business_name,
+        location=lead.address or "",
+        domain=lead.domain or "",
+        api_key=settings.brave_api_key,
+    )
+
+    if result["status"] == "found":
+        lead.decision_maker_name = result["name"]
+        lead.decision_maker_title = result["title"]
+        lead.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(lead)
+
+    return {"status": result["status"], "source": result["source"], "lead": _lead_dict(lead)}
+
+
+@router.post("/find-persons-bulk")
+async def find_persons_bulk(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Queue Brave Search people lookup for all leads missing a decision-maker name."""
+    if not settings.brave_api_key:
+        raise HTTPException(status_code=400, detail="BRAVE_API_KEY not set")
+
+    leads = db.query(Lead).filter(Lead.decision_maker_name.is_(None)).all()
+    if not leads:
+        return {"message": "No leads to process", "queued": 0}
+
+    background_tasks.add_task(_bulk_find_persons, [l.id for l in leads])
+    return {"message": f"Queued {len(leads)} leads for people lookup", "queued": len(leads)}
+
+
+async def _bulk_find_persons(lead_ids: list[int]):
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        for lead_id in lead_ids:
+            lead = db.query(Lead).filter(Lead.id == lead_id).first()
+            if not lead:
+                continue
+            result = await find_decision_maker(
+                business_name=lead.business_name,
+                location=lead.address or "",
+                domain=lead.domain or "",
+                api_key=settings.brave_api_key,
+            )
+            if result["status"] == "found":
+                lead.decision_maker_name = result["name"]
+                lead.decision_maker_title = result["title"]
+                lead.updated_at = datetime.utcnow()
+                db.commit()
     finally:
         db.close()
 

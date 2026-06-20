@@ -5,6 +5,9 @@ from functools import lru_cache
 class Settings(BaseSettings):
     google_maps_api_key: str = ""
 
+    # Brave Search — 2,000 free queries/month (search.brave.com/app/keys)
+    brave_api_key: str = ""
+
     # Email finder API keys — add whichever you have, chain skips missing ones
     hunter_api_key: str = ""        # 25 free/month  — hunter.io
     apollo_api_key: str = ""        # 50 free/month  — apollo.io

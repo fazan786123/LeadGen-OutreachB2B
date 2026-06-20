@@ -144,6 +144,7 @@ function renderLeadsTable(leads) {
       <td>${badge(l.status)}</td>
       <td>${l.rating ? '⭐ ' + l.rating : '—'}</td>
       <td>
+        ${!l.decision_maker_name ? `<button class="btn btn-sm btn-ghost" onclick="findPerson(${l.id})" title="Find decision-maker via Brave Search">👤</button> ` : ''}
         ${!l.decision_maker_email && l.domain ? `<button class="btn btn-sm btn-primary" onclick="findEmail(${l.id})">Find Email</button> ` : ''}
         ${l.decision_maker_email && !l.email_grade ? `<button class="btn btn-sm btn-warn" onclick="validateEmail(${l.id})">Validate</button> ` : ''}
         <button class="btn btn-sm btn-ghost" onclick="editLead(${l.id})">Edit</button>
@@ -153,11 +154,36 @@ function renderLeadsTable(leads) {
   `).join('');
 }
 
+async function findPerson(leadId) {
+  try {
+    toast('Searching Brave for decision-maker...', 'info');
+    const res = await api('POST', `/api/leads/${leadId}/find-person`);
+    if (res.status === 'found') {
+      toast(`Found: ${res.lead.decision_maker_name} (${res.lead.decision_maker_title || 'no title'}) via ${res.source}`, 'success');
+    } else {
+      toast('No decision-maker found', 'error');
+    }
+    await loadLeads();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function bulkFindPersons() {
+  try {
+    toast('Queuing people lookup for all leads...', 'info');
+    const res = await api('POST', '/api/leads/find-persons-bulk');
+    toast(res.message, 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
 async function findEmail(leadId) {
   try {
-    toast('Searching Hunter.io...', 'info');
+    toast('Running email finder chain...', 'info');
     const res = await api('POST', `/api/leads/${leadId}/find-email`);
-    toast(res.status === 'found' ? `Found: ${res.lead.decision_maker_email}` : 'No email found', res.status === 'found' ? 'success' : 'error');
+    toast(res.status === 'found' ? `Found: ${res.lead.decision_maker_email} (${res.source})` : 'No email found', res.status === 'found' ? 'success' : 'error');
     await loadLeads();
   } catch (e) {
     toast('Error: ' + e.message, 'error');
