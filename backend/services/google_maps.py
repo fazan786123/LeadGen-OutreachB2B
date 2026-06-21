@@ -80,7 +80,8 @@ async def geocode_location(location: str, api_key: str) -> tuple[float, float]:
     }
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(PLACES_NEW_SEARCH_URL, json=payload, headers=headers)
-        resp.raise_for_status()
+        if not resp.is_success:
+            raise ValueError(f"Geocode failed ({resp.status_code}): {resp.text}")
         data = resp.json()
 
     places = data.get("places", [])
