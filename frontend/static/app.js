@@ -137,16 +137,13 @@ function renderDashboardResults(leads, total) {
     <tr>
       <td>
         <strong>${esc(l.business_name)}</strong>
-        <br><small style="color:var(--text2)">${esc(l.address || '')}</small>
+        ${l.maps_url ? `<br><a href="${esc(l.maps_url)}" target="_blank" style="color:var(--accent);font-size:11px">View on Maps</a>` : ''}
       </td>
-      <td>
-        ${l.decision_maker_email
-          ? `<span style="color:var(--accent2)">${esc(l.decision_maker_email)}</span>${sourceBadge(l.email_source)}`
-          : badge(l.email_status)}
-      </td>
-      <td>${l.decision_maker_name ? esc(l.decision_maker_name) + (l.decision_maker_title ? `<br><small style="color:var(--text2)">${esc(l.decision_maker_title)}</small>` : '') : '—'}</td>
-      <td>${gradeBadge(l.email_grade, l.email_valid_reason)}</td>
-      <td>${l.rating ? '⭐ ' + l.rating : '—'}</td>
+      <td>${l.website ? `<a href="${esc(l.website)}" target="_blank" style="color:var(--accent)">${esc(l.domain || l.website)}</a>` : '—'}</td>
+      <td><small style="color:var(--text2)">${esc(l.address || '—')}</small></td>
+      <td>${l.phone ? `<a href="tel:${esc(l.phone)}" style="color:var(--text)">${esc(l.phone)}</a>` : '—'}</td>
+      <td>${l.rating ? `⭐ ${l.rating} <small style="color:var(--text2)">(${l.review_count || 0})</small>` : '—'}</td>
+      <td><small style="color:var(--text2)">${esc(l.category || '—')}</small></td>
     </tr>
   `).join('');
 }
