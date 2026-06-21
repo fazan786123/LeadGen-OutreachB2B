@@ -206,7 +206,6 @@ async function runSearch() {
   }
 
   const maxResults = getMaxResults();
-  const squareSize = parseInt(document.getElementById('pipe-radius').value) || 2000;
 
   _pipeRunning = true;
   const btn = document.getElementById('pipe-search-btn');
@@ -222,10 +221,10 @@ async function runSearch() {
   try {
     setPipeStep('search', 'active');
     setPipeProgress(5, 'Searching Google Maps…', `${keyword} in ${location}`, 'Connecting to Maps API…');
-    pipeLog(`Starting search: "${keyword}" in ${location}${maxResults ? ` (max ${maxResults})` : ''}`, 'info');
+    pipeLog(`Starting smart search: "${keyword}" in ${location}${maxResults ? ` (target ${maxResults})` : ' (no limit)'}`, 'info');
 
-    const res = await api('POST', '/api/leads/scrape-grid', {
-      keyword, location, square_size: squareSize, mode: 'grid', max_items: maxResults,
+    const res = await api('POST', '/api/leads/smart-scrape', {
+      keyword, location, target: maxResults,
     });
     pipeLog(`Search job #${res.job_id} started`, 'info');
     const added = await _pollGridJob(res.job_id);
@@ -313,20 +312,28 @@ async function runEnrich() {
 function _pollGridJob(jobId) {
   return new Promise((resolve, reject) => {
     let added = 0;
+    let lastPassLabel = '';
     _gridPollInterval = setInterval(async () => {
       try {
         const job = await api('GET', `/api/leads/scrape-jobs/${jobId}`);
         const pct = Math.min(24, Math.round((job.progress_pct || 0) * 0.24));
-        setPipeProgress(pct, 'Searching Google Maps…', `Viewport ${job.viewports_done} / ${job.viewports_total}`, `${job.leads_found} businesses found so far`);
+        const passLabel = job.pass_label || '';
+        const subtitle = passLabel || `Viewport ${job.viewports_done} / ${job.viewports_total}`;
+        setPipeProgress(pct, 'Searching Google Maps…', subtitle, `${job.leads_found || 0} businesses found — ${job.leads_added || 0} new`);
+
+        if (passLabel && passLabel !== lastPassLabel) {
+          pipeLog(passLabel, 'info');
+          lastPassLabel = passLabel;
+        }
 
         if (job.status === 'done') {
           clearInterval(_gridPollInterval);
           added = job.leads_added;
-          pipeLog(`Grid search done — ${job.leads_added} new leads (${job.leads_found - job.leads_added} duplicates)`, 'ok');
+          pipeLog(`Smart search done — ${job.leads_added} new leads added`, 'ok');
           resolve(added);
         } else if (job.status === 'failed') {
           clearInterval(_gridPollInterval);
-          reject(new Error(job.error || 'Grid scrape failed'));
+          reject(new Error(job.error || 'Smart scrape failed'));
         }
       } catch (e) {
         clearInterval(_gridPollInterval);

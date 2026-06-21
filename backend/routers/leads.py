@@ -31,6 +31,12 @@ class GridScrapeRequest(BaseModel):
     max_items: int = 0       # 0 = unlimited, mirrors n8n's max_items param
 
 
+class SmartScrapeRequest(BaseModel):
+    keyword: str
+    location: str
+    target: int = 100        # desired number of NEW leads added to the DB
+
+
 class LeadUpdate(BaseModel):
     status: Optional[str] = None
     notes: Optional[str] = None
@@ -94,12 +100,35 @@ async def scrape_grid(req: GridScrapeRequest, background_tasks: BackgroundTasks,
     return {"job_id": job.id, "message": msg, "viewports_total": viewports_total, "mode": mode_label}
 
 
+@router.post("/smart-scrape")
+async def smart_scrape(req: SmartScrapeRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """Auto-scaling scrape: expands radius pass-by-pass until the target lead count is reached."""
+    if not settings.google_maps_api_key:
+        raise HTTPException(status_code=400, detail="GOOGLE_MAPS_API_KEY not set")
+
+    job = ScrapeJob(
+        keyword=req.keyword,
+        location=req.location,
+        mode="smart",
+        square_size=0,
+        viewports_total=36,   # updated per-pass as we go
+        status="running",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    background_tasks.add_task(_run_smart_scrape, job.id, req.keyword, req.location, req.target)
+    return {"job_id": job.id, "message": f"Smart scrape started — target {req.target} leads", "mode": "smart"}
+
+
 @router.get("/scrape-jobs/{job_id}")
 def get_scrape_job(job_id: int, db: Session = Depends(get_db)):
     """Poll this endpoint for grid scrape progress."""
     job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    is_running = job.status == "running"
     return {
         "id": job.id,
         "status": job.status,
@@ -111,7 +140,8 @@ def get_scrape_job(job_id: int, db: Session = Depends(get_db)):
         "progress_pct": round((job.viewports_done / job.viewports_total) * 100) if job.viewports_total else 0,
         "leads_found": job.leads_found,
         "leads_added": job.leads_added,
-        "error": job.error,
+        "pass_label": job.error if is_running else None,
+        "error": job.error if not is_running else None,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
     }
@@ -164,6 +194,76 @@ async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size
             job.leads_added = added
             job.leads_found = len(businesses)
             job.viewports_done = job.viewports_total
+            job.finished_at = datetime.utcnow()
+            db.commit()
+
+    except Exception as e:
+        job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+        if job:
+            job.status = "failed"
+            job.error = str(e)
+            job.finished_at = datetime.utcnow()
+            db.commit()
+    finally:
+        db.close()
+
+
+_SMART_PASSES = [
+    ("grid", 1000,  36,  "Pass 1/4 — grid, 1 km radius"),
+    ("grid", 3000,  36,  "Pass 2/4 — grid, 3 km radius"),
+    ("deep", 2000, 324,  "Pass 3/4 — deep sweep, 2 km"),
+    ("deep", 5000, 324,  "Pass 4/4 — deep sweep, 5 km"),
+]
+
+
+async def _run_smart_scrape(job_id: int, keyword: str, location: str, target: int):
+    from database import SessionLocal
+    db = SessionLocal()
+
+    viewports_offset = 0
+    total_added = 0
+    total_found = 0
+
+    try:
+        for mode, square_size, vp_count, label in _SMART_PASSES:
+            job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+            if job:
+                job.error = label
+                job.viewports_total = viewports_offset + vp_count
+                db.commit()
+
+            async def _progress(done: int, total: int, found: int, _off=viewports_offset):
+                j = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+                if j:
+                    j.viewports_done = _off + done
+                    j.leads_found = total_found + found
+                    db.commit()
+
+            fn = deep_search_businesses if mode == "deep" else grid_search_businesses
+            results = await fn(keyword, location, settings.google_maps_api_key, square_size, target, _progress)
+
+            added = 0
+            for biz in results:
+                existing = db.query(Lead).filter(Lead.google_place_id == biz["google_place_id"]).first()
+                if not existing:
+                    db.add(Lead(**{k: v for k, v in biz.items() if hasattr(Lead, k)}))
+                    added += 1
+            db.commit()
+
+            total_added += added
+            total_found += len(results)
+            viewports_offset += vp_count
+
+            if target > 0 and total_added >= target:
+                break
+
+        job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+        if job:
+            job.status = "done"
+            job.leads_added = total_added
+            job.leads_found = total_found
+            job.viewports_done = viewports_offset
+            job.error = None
             job.finished_at = datetime.utcnow()
             db.commit()
 
