@@ -21,20 +21,14 @@ BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 # Titles we consider decision-makers, in priority order
 DM_TITLES = [
     "founder", "co-founder", "cofounder",
-    "owner", "co-owner", "practice owner",
-    "ceo", "chief executive",
+    "owner", "co-owner",
+    "ceo", "chief executive", "cto", "coo", "cfo",
     "president", "managing director", "md",
     "director", "principal",
     "partner", "managing partner",
     "head", "vp", "vice president",
-    "manager", "general manager", "practice manager",
-    # Medical / dental
-    "dentist", "principal dentist", "associate dentist",
-    "doctor", "dr", "physician", "surgeon", "consultant",
-    "therapist", "optician", "pharmacist", "practitioner",
-    # Legal / finance
-    "solicitor", "barrister", "accountant", "advisor", "adviser",
-    # Trades / services
+    "manager", "general manager",
+    "consultant", "advisor", "adviser",
     "proprietor", "operator", "specialist",
 ]
 
@@ -209,8 +203,8 @@ async def find_decision_makers(
         loc_part = f' "{location}"' if location else ""
         gen_query = (
             f'"{business_name}"{loc_part} '
-            f'owner OR CEO OR founder OR director OR manager OR dentist OR '
-            f'doctor OR principal OR proprietor OR partner'
+            f'owner OR CEO OR founder OR director OR manager OR '
+            f'principal OR proprietor OR partner OR "managing director"'
         )
         try:
             snippets = await _brave_search(gen_query, api_key, count=10)
