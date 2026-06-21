@@ -76,7 +76,7 @@ async def geocode_location(location: str, api_key: str) -> tuple[float, float]:
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": api_key,
-        "X-Goog-FieldMask": "places.location,places.formattedAddress",
+        "X-Goog-FieldMask": "places.location.latitude,places.location.longitude",
     }
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(PLACES_NEW_SEARCH_URL, json=payload, headers=headers)
@@ -87,7 +87,9 @@ async def geocode_location(location: str, api_key: str) -> tuple[float, float]:
     if not places or "location" not in places[0]:
         raise ValueError(f"Could not geocode '{location}': no results from Places API")
 
-    loc = places[0]["location"]
+    loc = places[0].get("location", {})
+    if "latitude" not in loc:
+        raise ValueError(f"Could not geocode '{location}': no location in response")
     return loc["latitude"], loc["longitude"]
 
 
