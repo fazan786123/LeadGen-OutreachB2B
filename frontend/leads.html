@@ -9,10 +9,10 @@
 <body>
 
 <div class="sidebar">
-  <div class="sidebar-logo">LeadGen B2B<span>Outreach System</span></div>
+  <div class="sidebar-logo">LeadGen<span>B2B Outreach</span></div>
   <nav>
     <a class="nav-link" href="/"><span class="icon">⚡</span> Run Pipeline</a>
-    <a class="nav-link active" href="/leads.html"><span class="icon">🏢</span> Leads</a>
+    <a class="nav-link active" href="/leads.html"><span class="icon">🏢</span> All Leads</a>
     <a class="nav-link" href="/campaigns.html"><span class="icon">📧</span> Campaigns</a>
     <a class="nav-link" href="/activity.html"><span class="icon">📋</span> Activity</a>
   </nav>
@@ -21,16 +21,21 @@
 <div class="main">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
     <div>
-      <div class="page-title">Leads</div>
+      <div class="page-title">All Leads</div>
       <div class="page-sub" id="leads-count">Loading...</div>
     </div>
     <div style="display:flex;gap:10px;">
       <button class="btn btn-ghost" onclick="bulkFindPersons()">👤 Find All Persons</button>
       <button class="btn btn-ghost" onclick="bulkFindEmails()">🔍 Bulk Find Emails</button>
       <button class="btn btn-warn" onclick="bulkValidateEmails()">✓ Validate All Emails</button>
-      <button class="btn btn-ghost" onclick="openScrapeModal()">+ Quick Search</button>
-      <button class="btn btn-primary" onclick="openGridScrapeModal()">⚡ Area Sweep</button>
     </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="leads-tabs">
+    <button class="leads-tab active" data-tab="all" onclick="switchTab('all', this)">All Leads</button>
+    <button class="leads-tab" data-tab="with-website" onclick="switchTab('with-website', this)">🌐 Has Website</button>
+    <button class="leads-tab" data-tab="no-website" onclick="switchTab('no-website', this)">🚫 No Website</button>
   </div>
 
   <div class="search-bar">
@@ -62,19 +67,22 @@
     <div class="table-wrapper">
       <table>
         <thead>
-          <tr>
+          <tr id="leads-thead">
             <th>Business</th>
             <th>Domain</th>
-            <th>Email Status</th>
-            <th>Decision Maker</th>
-            <th>Validation</th>
-            <th>Status</th>
+            <th>Address</th>
+            <th>Phone</th>
             <th>Rating</th>
+            <th>Category</th>
+            <th>Decision Maker</th>
+            <th>Email</th>
+            <th>Grade</th>
+            <th>Status</th>
             <th>Actions</th>
           </tr>
         </thead>
         <tbody id="leads-tbody">
-          <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text2)">Loading...</td></tr>
+          <tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text2)">Loading...</td></tr>
         </tbody>
       </table>
     </div>

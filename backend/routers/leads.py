@@ -321,6 +321,7 @@ def list_leads(
     email_status: Optional[str] = None,
     email_grade: Optional[str] = None,
     search: Optional[str] = None,
+    has_website: Optional[str] = None,
     skip: int = 0,
     limit: int = Query(default=50, le=200),
     db: Session = Depends(get_db),
@@ -332,6 +333,10 @@ def list_leads(
         q = q.filter(Lead.email_status == email_status)
     if email_grade:
         q = q.filter(Lead.email_grade == email_grade)
+    if has_website == 'true':
+        q = q.filter(Lead.website.isnot(None))
+    elif has_website == 'false':
+        q = q.filter(Lead.website.is_(None))
     if search:
         q = q.filter(or_(
             Lead.business_name.ilike(f"%{search}%"),

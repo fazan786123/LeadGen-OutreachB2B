@@ -255,6 +255,29 @@ tbody tr:last-child td { border-bottom: none; }
 .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
 .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 
+/* Leads tabs */
+.leads-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0;
+}
+.leads-tab {
+  padding: 8px 18px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text2);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: -1px;
+  transition: all 0.15s;
+}
+.leads-tab:hover { color: var(--text); }
+.leads-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
 /* Search bar */
 .search-bar {
   display: flex;

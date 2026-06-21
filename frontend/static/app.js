@@ -365,14 +365,21 @@ async function _waitForBulk(step, pctStart, pctEnd) {
 
 // ── Leads page ────────────────────────────────────────────────────────
 let leadsPage = { skip: 0, limit: 50 };
+let _activeTab = 'all';
 
 async function initLeads() {
   await loadLeads();
-
   document.getElementById('search-input').addEventListener('input', debounce(loadLeads, 400));
   document.getElementById('filter-status').addEventListener('change', loadLeads);
   document.getElementById('filter-email-status').addEventListener('change', loadLeads);
   document.getElementById('filter-grade')?.addEventListener('change', loadLeads);
+}
+
+function switchTab(tab, el) {
+  _activeTab = tab;
+  document.querySelectorAll('.leads-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  loadLeads();
 }
 
 async function loadLeads() {
@@ -386,11 +393,14 @@ async function loadLeads() {
   if (status) params.set('status', status);
   if (emailStatus) params.set('email_status', emailStatus);
   if (grade) params.set('email_grade', grade);
+  if (_activeTab === 'with-website') params.set('has_website', 'true');
+  if (_activeTab === 'no-website') params.set('has_website', 'false');
 
   try {
     const data = await api('GET', `/api/leads?${params}`);
     renderLeadsTable(data.leads);
-    document.getElementById('leads-count').textContent = `${data.total} leads`;
+    const tabLabel = _activeTab === 'no-website' ? 'leads without a website' : _activeTab === 'with-website' ? 'leads with a website' : 'leads';
+    document.getElementById('leads-count').textContent = `${data.total} ${tabLabel}`;
   } catch (e) {
     toast('Failed to load leads: ' + e.message, 'error');
   }
@@ -398,21 +408,35 @@ async function loadLeads() {
 
 function renderLeadsTable(leads) {
   const tbody = document.getElementById('leads-tbody');
+  const isNoWebsite = _activeTab === 'no-website';
+
   if (!leads.length) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">🔍</div>No leads yet. Run a scrape to get started.</div></td></tr>`;
+    const msg = isNoWebsite ? 'No leads without a website found.' : 'No leads yet. Run a search to get started.';
+    tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="icon">${isNoWebsite ? '🚫' : '🔍'}</div>${msg}</div></td></tr>`;
     return;
   }
+
   tbody.innerHTML = leads.map(l => `
     <tr style="${l.email_grade === 'invalid' ? 'opacity:0.5' : ''}">
-      <td><strong>${esc(l.business_name)}</strong><br><small style="color:var(--text2)">${esc(l.address || '')}</small></td>
-      <td>${l.website ? `<a href="${esc(l.website)}" target="_blank" style="color:var(--accent)">${esc(l.domain || l.website)}</a>` : '—'}</td>
-      <td>${badge(l.email_status)}</td>
-      <td>${l.decision_maker_email ? `<strong>${esc(l.decision_maker_name || '')}</strong><br><small>${esc(l.decision_maker_email)}</small><br>${sourceBadge(l.email_source)}` : '—'}</td>
+      <td>
+        <strong>${esc(l.business_name)}</strong>
+        ${l.maps_url ? `<br><a href="${esc(l.maps_url)}" target="_blank" style="color:var(--accent);font-size:11px">Maps</a>` : ''}
+      </td>
+      <td>${l.website ? `<a href="${esc(l.website)}" target="_blank" style="color:var(--accent)">${esc(l.domain || l.website)}</a>` : '<span style="color:var(--warn)">No website</span>'}</td>
+      <td><small style="color:var(--text2)">${esc(l.address || '—')}</small></td>
+      <td>${l.phone ? `<a href="tel:${esc(l.phone)}" style="color:var(--text);font-size:12px">${esc(l.phone)}</a>` : '—'}</td>
+      <td>${l.rating ? `⭐ ${l.rating} <small style="color:var(--text2)">(${l.review_count || 0})</small>` : '—'}</td>
+      <td><small style="color:var(--text2)">${esc(l.category || '—')}</small></td>
+      <td>${l.decision_maker_name
+        ? `<strong>${esc(l.decision_maker_name)}</strong>${l.decision_maker_title ? `<br><small style="color:var(--text2)">${esc(l.decision_maker_title)}</small>` : ''}`
+        : '—'}</td>
+      <td>${l.decision_maker_email
+        ? `<small>${esc(l.decision_maker_email)}</small><br>${sourceBadge(l.email_source)}`
+        : badge(l.email_status)}</td>
       <td>${gradeBadge(l.email_grade, l.email_valid_reason)}</td>
       <td>${badge(l.status)}</td>
-      <td>${l.rating ? '⭐ ' + l.rating : '—'}</td>
       <td>
-        ${!l.decision_maker_name ? `<button class="btn btn-sm btn-ghost" onclick="findPerson(${l.id})" title="Find decision-maker via Brave Search">👤</button> ` : ''}
+        ${!l.decision_maker_name ? `<button class="btn btn-sm btn-ghost" onclick="findPerson(${l.id})" title="Find decision-maker">👤</button> ` : ''}
         ${!l.decision_maker_email && l.domain ? `<button class="btn btn-sm btn-primary" onclick="findEmail(${l.id})">Find Email</button> ` : ''}
         ${l.decision_maker_email && !l.email_grade ? `<button class="btn btn-sm btn-warn" onclick="validateEmail(${l.id})">Validate</button> ` : ''}
         <button class="btn btn-sm btn-ghost" onclick="editLead(${l.id})">Edit</button>
