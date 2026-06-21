@@ -40,9 +40,30 @@ _NAME_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 _TITLE_NAME_RE = re.compile(
-    r'\b(' + '|'.join(DM_TITLES) + r')[,:]?\s+([A-Z][a-z]+(?:\s[A-Z][a-z]+)+)',
+    r'\b(' + '|'.join(DM_TITLES) + r')[,:]?\s+([A-Z][a-z]{1,}(?:\s[A-Z][a-z]{1,})+)',
     re.IGNORECASE,
 )
+
+# Words that look capitalised but are NOT person names
+_NOT_A_NAME = {
+    "including", "financials", "services", "solutions", "limited", "company",
+    "group", "associates", "partners", "practice", "clinic", "centre", "center",
+    "dental", "medical", "health", "care", "professional", "business", "the",
+    "and", "for", "with", "our", "all", "more", "contact", "about", "home",
+    "new", "view", "get", "find", "meet", "team", "staff", "management",
+}
+
+def _is_valid_name(name: str) -> bool:
+    """Return True only if every word in the name looks like a real person's name."""
+    words = name.strip().split()
+    if len(words) < 2 or len(words) > 4:
+        return False
+    for w in words:
+        if w.lower() in _NOT_A_NAME:
+            return False
+        if len(w) < 2:
+            return False
+    return True
 
 
 def _title_priority(title: str) -> int:
@@ -62,10 +83,11 @@ def _extract_from_snippets(snippets: list[str], linkedin: bool = False) -> Optio
             m = _LINKEDIN_RE.search(snippet)
             if m:
                 name, title = m.group(1).strip(), m.group(2).strip()
-                p = _title_priority(title)
-                if p < best_priority:
-                    best_priority = p
-                    best = {"name": name, "title": title}
+                if _is_valid_name(name):
+                    p = _title_priority(title)
+                    if p < best_priority:
+                        best_priority = p
+                        best = {"name": name, "title": title}
             continue
 
         for pattern, name_grp, title_grp in [
@@ -75,6 +97,8 @@ def _extract_from_snippets(snippets: list[str], linkedin: bool = False) -> Optio
             for m in pattern.finditer(snippet):
                 name = m.group(name_grp).strip()
                 title = m.group(title_grp).strip()
+                if not _is_valid_name(name):
+                    continue
                 p = _title_priority(title)
                 if p < best_priority:
                     best_priority = p
