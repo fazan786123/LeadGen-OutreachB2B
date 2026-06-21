@@ -16,6 +16,26 @@ from services.people_finder import find_decision_maker, find_decision_makers
 router = APIRouter(prefix="/api/leads", tags=["leads"])
 settings = get_settings()
 
+# In-memory bulk job tracker
+import uuid
+_bulk_jobs: dict = {}
+
+def _new_bulk_job(total: int, job_type: str) -> str:
+    jid = str(uuid.uuid4())[:8]
+    _bulk_jobs[jid] = {"id": jid, "type": job_type, "status": "running",
+                       "total": total, "done": 0, "current": "", "log": []}
+    return jid
+
+def _job_log(jid: str, msg: str):
+    if jid in _bulk_jobs:
+        _bulk_jobs[jid]["log"].append(msg)
+        if len(_bulk_jobs[jid]["log"]) > 200:
+            _bulk_jobs[jid]["log"] = _bulk_jobs[jid]["log"][-200:]
+
+# In-memory bulk job tracker — keyed by uuid job_id
+import uuid
+_bulk_jobs: dict = {}
+
 
 class ScrapeRequest(BaseModel):
     keyword: str
@@ -145,6 +165,14 @@ def get_scrape_job(job_id: int, db: Session = Depends(get_db)):
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
     }
+
+
+@router.get("/bulk-jobs/{job_id}")
+def get_bulk_job(job_id: str):
+    job = _bulk_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @router.get("/scrape-jobs")
@@ -325,42 +353,53 @@ async def find_persons_bulk(background_tasks: BackgroundTasks, db: Session = Dep
 
     leads = db.query(Lead).filter(Lead.decision_maker_name.is_(None)).all()
     if not leads:
-        return {"message": "No leads to process", "queued": 0}
+        return {"message": "No leads to process", "queued": 0, "job_id": None}
 
-    background_tasks.add_task(_bulk_find_persons, [l.id for l in leads])
-    return {"message": f"Queued {len(leads)} leads for people lookup", "queued": len(leads)}
+    jid = _new_bulk_job(len(leads), "persons")
+    background_tasks.add_task(_bulk_find_persons, [l.id for l in leads], jid)
+    return {"message": f"Queued {len(leads)} leads for people lookup", "queued": len(leads), "job_id": jid}
 
 
-async def _bulk_find_persons(lead_ids: list[int]):
+async def _bulk_find_persons(lead_ids: list[int], jid: str):
     from database import SessionLocal
     db = SessionLocal()
     try:
-        for lead_id in lead_ids:
+        for i, lead_id in enumerate(lead_ids):
             lead = db.query(Lead).filter(Lead.id == lead_id).first()
             if not lead:
                 continue
+            name = lead.business_name
+            _bulk_jobs[jid]["current"] = name
+            _bulk_jobs[jid]["done"] = i
+            _job_log(jid, f"🔍 [{i+1}/{len(lead_ids)}] Searching: {name}")
             result = await find_decision_makers(
-                business_name=lead.business_name,
+                business_name=name,
                 location=lead.address or "",
                 domain=lead.domain or "",
                 api_key=settings.brave_api_key,
                 max_contacts=5,
             )
             if result["status"] == "found":
+                contacts = result["contacts"]
                 db.query(LeadContact).filter(LeadContact.lead_id == lead_id).delete()
-                for rank, c in enumerate(result["contacts"], start=1):
-                    db.add(LeadContact(
-                        lead_id=lead_id,
-                        rank=rank,
-                        name=c["name"],
-                        title=c["title"],
-                        source=c["source"],
-                    ))
-                primary = result["contacts"][0]
+                for rank, c in enumerate(contacts, start=1):
+                    db.add(LeadContact(lead_id=lead_id, rank=rank,
+                                       name=c["name"], title=c["title"], source=c["source"]))
+                primary = contacts[0]
                 lead.decision_maker_name = primary["name"]
                 lead.decision_maker_title = primary["title"]
                 lead.updated_at = datetime.utcnow()
                 db.commit()
+                _job_log(jid, f"  ✓ Found {len(contacts)} contact(s): {primary['name']} — {primary.get('title','')}")
+            else:
+                _job_log(jid, f"  — No decision-maker found")
+        _bulk_jobs[jid]["status"] = "done"
+        _bulk_jobs[jid]["done"] = len(lead_ids)
+        _bulk_jobs[jid]["current"] = ""
+        _job_log(jid, f"✅ Done — processed {len(lead_ids)} leads")
+    except Exception as e:
+        _bulk_jobs[jid]["status"] = "failed"
+        _job_log(jid, f"❌ Error: {e}")
     finally:
         db.close()
 
@@ -401,27 +440,31 @@ async def find_email(lead_id: int, db: Session = Depends(get_db)):
 @router.post("/find-emails-bulk")
 async def find_emails_bulk(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """Queue email chain for all leads with a domain but no email yet."""
-
     leads = db.query(Lead).filter(
         Lead.domain.isnot(None),
         Lead.email_status == "not_searched"
     ).all()
 
     if not leads:
-        return {"message": "No leads to process", "queued": 0}
+        return {"message": "No leads to process", "queued": 0, "job_id": None}
 
-    background_tasks.add_task(_bulk_email_search, [l.id for l in leads])
-    return {"message": f"Queued {len(leads)} leads for email lookup", "queued": len(leads)}
+    jid = _new_bulk_job(len(leads), "emails")
+    background_tasks.add_task(_bulk_email_search, [l.id for l in leads], jid)
+    return {"message": f"Queued {len(leads)} leads for email lookup", "queued": len(leads), "job_id": jid}
 
 
-async def _bulk_email_search(lead_ids: list[int]):
+async def _bulk_email_search(lead_ids: list[int], jid: str):
     from database import SessionLocal
     db = SessionLocal()
     try:
-        for lead_id in lead_ids:
+        for i, lead_id in enumerate(lead_ids):
             lead = db.query(Lead).filter(Lead.id == lead_id).first()
             if not lead or not lead.domain:
                 continue
+            name = lead.business_name
+            _bulk_jobs[jid]["current"] = name
+            _bulk_jobs[jid]["done"] = i
+            _job_log(jid, f"🔍 [{i+1}/{len(lead_ids)}] {name} ({lead.domain})")
             result = await find_email_chain(lead.domain, lead.website or "")
             if result["status"] == "found":
                 lead.decision_maker_email = result["email"]
@@ -430,11 +473,22 @@ async def _bulk_email_search(lead_ids: list[int]):
                 lead.email_confidence = result.get("confidence")
                 lead.email_status = "found"
                 lead.email_source = result.get("source")
+                tried = " → ".join(result.get("tried", []))
+                _job_log(jid, f"  ✓ {result['email']} via {result.get('source','')} (tried: {tried})")
             else:
                 lead.email_status = "not_found"
                 lead.email_source = None
+                tried = " → ".join(result.get("tried", []))
+                _job_log(jid, f"  — Not found (tried: {tried})")
             lead.updated_at = datetime.utcnow()
             db.commit()
+        _bulk_jobs[jid]["status"] = "done"
+        _bulk_jobs[jid]["done"] = len(lead_ids)
+        _bulk_jobs[jid]["current"] = ""
+        _job_log(jid, f"✅ Done — processed {len(lead_ids)} leads")
+    except Exception as e:
+        _bulk_jobs[jid]["status"] = "failed"
+        _job_log(jid, f"❌ Error: {e}")
     finally:
         db.close()
 

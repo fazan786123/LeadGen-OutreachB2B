@@ -488,21 +488,12 @@ async function findPerson(leadId) {
 }
 
 async function bulkFindPersons() {
-  const btn = document.querySelector('[onclick="bulkFindPersons()"]');
-  const original = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Running…'; }
   try {
     const res = await api('POST', '/api/leads/find-persons-bulk');
-    if (res.queued === 0) {
-      toast('No leads need a decision-maker lookup', 'info');
-    } else {
-      toast(`${res.message} — table will refresh as results come in`, 'success');
-      _pollUntilStable(loadLeads, 180000);
-    }
+    if (res.queued === 0) { toast('No leads need a decision-maker lookup', 'info'); return; }
+    _openBulkProgressModal(res.job_id, `👤 Finding Decision Makers — ${res.queued} leads`);
   } catch (e) {
     toast('Error: ' + e.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = original; }
   }
 }
 
@@ -733,21 +724,12 @@ async function runGridScrape() {
 }
 
 async function bulkFindEmails() {
-  const btn = document.querySelector('[onclick="bulkFindEmails()"]');
-  const original = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Running…'; }
   try {
     const res = await api('POST', '/api/leads/find-emails-bulk');
-    if (res.queued === 0) {
-      toast('No leads need an email lookup (all searched or no domain)', 'info');
-    } else {
-      toast(`${res.message} — table will refresh as results come in`, 'success');
-      _pollUntilStable(loadLeads, 300000);
-    }
+    if (res.queued === 0) { toast('No leads need an email lookup (all searched or no domain)', 'info'); return; }
+    _openBulkProgressModal(res.job_id, `🔍 Finding Emails — ${res.queued} leads`);
   } catch (e) {
     toast('Error: ' + e.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = original; }
   }
 }
 
@@ -973,6 +955,67 @@ async function loadLogs() {
   } catch (e) {
     toast('Failed to load logs: ' + e.message, 'error');
   }
+}
+
+function _openBulkProgressModal(jobId, title) {
+  const overlay = openModal(`
+    <div class="modal-title">${esc(title)}</div>
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px;">
+        <span id="bulk-current" style="color:var(--text2);font-style:italic">Starting…</span>
+        <span id="bulk-pct" style="color:var(--accent);font-weight:700">0%</span>
+      </div>
+      <div style="background:var(--bg3);border-radius:6px;height:8px;overflow:hidden;">
+        <div id="bulk-bar" style="height:100%;background:var(--accent);width:0%;transition:width 0.4s;border-radius:6px;"></div>
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-top:6px;" id="bulk-counts"></div>
+    </div>
+    <div id="bulk-log" style="
+      background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+      padding:10px 14px;max-height:320px;overflow-y:auto;
+      font-size:12px;font-family:'Courier New',monospace;line-height:1.8;
+    "></div>
+    <div class="modal-footer" style="margin-top:16px;">
+      <button class="btn btn-ghost" id="bulk-close-btn" onclick="this.closest('.modal-overlay').remove()" disabled>Please wait…</button>
+    </div>
+  `);
+
+  let lastLogLen = 0;
+  const iv = setInterval(async () => {
+    try {
+      const job = await api('GET', `/api/leads/bulk-jobs/${jobId}`);
+      const pct = job.total > 0 ? Math.round((job.done / job.total) * 100) : 0;
+
+      document.getElementById('bulk-bar').style.width = pct + '%';
+      document.getElementById('bulk-pct').textContent = pct + '%';
+      document.getElementById('bulk-current').textContent = job.current || (job.status === 'done' ? 'Complete!' : 'Processing…');
+      document.getElementById('bulk-counts').textContent = `${job.done} / ${job.total} processed`;
+
+      const logEl = document.getElementById('bulk-log');
+      if (logEl && job.log.length > lastLogLen) {
+        const newLines = job.log.slice(lastLogLen);
+        newLines.forEach(line => {
+          const span = document.createElement('div');
+          span.textContent = line;
+          span.style.color = line.startsWith('  ✓') ? 'var(--accent2)'
+                           : line.startsWith('  —') ? 'var(--text2)'
+                           : line.startsWith('❌') ? 'var(--danger)'
+                           : line.startsWith('✅') ? 'var(--accent2)'
+                           : 'var(--text)';
+          logEl.appendChild(span);
+        });
+        logEl.scrollTop = logEl.scrollHeight;
+        lastLogLen = job.log.length;
+      }
+
+      if (job.status === 'done' || job.status === 'failed') {
+        clearInterval(iv);
+        const closeBtn = document.getElementById('bulk-close-btn');
+        if (closeBtn) { closeBtn.disabled = false; closeBtn.textContent = 'Close'; }
+        await loadLeads();
+      }
+    } catch (_) { clearInterval(iv); }
+  }, 2000);
 }
 
 // Polls refreshFn every 5s until lead count stabilises or timeout expires
