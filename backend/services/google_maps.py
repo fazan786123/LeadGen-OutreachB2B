@@ -185,13 +185,11 @@ async def _search_viewport_all_pages(
     keyword: str,
     viewport: dict,
     api_key: str,
-    max_items: int = 0,         # 0 = unlimited
-    collected_so_far: int = 0,
 ) -> list[dict]:
     """
     Mirrors n8n's Get Businesses workflow:
     - Fetches first page for this viewport
-    - Follows nextPageToken recursively until exhausted or max_items reached
+    - Follows nextPageToken recursively until exhausted
     - Returns all places found across all pages for this viewport
     """
     results = []
@@ -203,10 +201,6 @@ async def _search_viewport_all_pages(
     }
 
     while True:
-        # Stop if we've already hit the global max
-        if max_items > 0 and (collected_so_far + len(results)) >= max_items:
-            break
-
         payload: dict = {
             "textQuery": keyword,
             "locationRestriction": {"rectangle": viewport},
@@ -264,8 +258,6 @@ async def _search_all_viewports(
 
             pages = await _search_viewport_all_pages(
                 client, keyword, viewport, api_key,
-                max_items=max_items,
-                collected_so_far=len(seen_ids),
             )
 
             for biz in pages:
