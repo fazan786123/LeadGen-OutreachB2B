@@ -17,6 +17,7 @@ from typing import Optional
 from services.team_scraper import scrape_team_page
 
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
+BRAVE_SUMMARIZER_URL = "https://api.search.brave.com/res/v1/summarizer/search"
 
 # Titles we consider decision-makers, in priority order
 DM_TITLES = [
@@ -133,6 +134,51 @@ def _extract_from_snippets(snippets: list[str], linkedin: bool = False, max_cont
     return [c for _, c in candidates[:max_contacts]]
 
 
+async def _brave_summarizer(query: str, api_key: str) -> str:
+    """
+    Two-step Brave AI Summarizer.
+    Step 1: web search with summary=1 → get summarizer key.
+    Step 2: fetch summarizer endpoint with key → get AI narrative text.
+    Returns the summary as a plain string, or "" if unavailable.
+    """
+    headers = {
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip",
+        "X-Subscription-Token": api_key,
+    }
+    params = {
+        "q": query,
+        "summary": 1,
+        "count": 5,
+        "search_lang": "en",
+        "result_filter": "web",
+    }
+    async with httpx.AsyncClient(timeout=12) as client:
+        resp = await client.get(BRAVE_SEARCH_URL, headers=headers, params=params)
+        resp.raise_for_status()
+        data = resp.json()
+
+    key = data.get("summarizer", {}).get("key")
+    if not key:
+        return ""
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            BRAVE_SUMMARIZER_URL,
+            headers=headers,
+            params={"key": key, "entity_info": 1},
+        )
+        resp.raise_for_status()
+        sdata = resp.json()
+
+    parts = [
+        seg.get("text", "")
+        for seg in sdata.get("summary", [])
+        if seg.get("type") == "text"
+    ]
+    return " ".join(parts).strip()
+
+
 async def _brave_search(query: str, api_key: str, count: int = 5) -> list[str]:
     """Returns list of snippet strings from Brave Search results."""
     headers = {
@@ -215,6 +261,27 @@ async def find_decision_makers(
             _merge(contacts)
         except Exception as e:
             debug.append(f"web_search error: {e}")
+
+    # ── Source 4: Brave AI Summarizer ────────────────────────────────────
+    if api_key and len(all_contacts) < max_contacts:
+        loc_part = f" in {location}" if location else ""
+        sum_query = f'Who is the owner or CEO of "{business_name}"{loc_part}?'
+        try:
+            summary_text = await _brave_summarizer(sum_query, api_key)
+            if summary_text:
+                contacts = _extract_from_snippets(
+                    [summary_text], linkedin=False, max_contacts=max_contacts
+                )
+                debug.append(
+                    f"summarizer: {len(summary_text)} chars → {len(contacts)} contacts"
+                )
+                for c in contacts:
+                    c["source"] = "brave_summarizer"
+                _merge(contacts)
+            else:
+                debug.append("summarizer: no summary returned")
+        except Exception as e:
+            debug.append(f"summarizer error: {e}")
 
     if all_contacts:
         result = all_contacts[:max_contacts]
