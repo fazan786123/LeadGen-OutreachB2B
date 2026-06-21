@@ -71,17 +71,24 @@ def _place_to_dict(place: dict) -> dict:
 # ── Geocoding ─────────────────────────────────────────────────────────
 
 async def geocode_location(location: str, api_key: str) -> tuple[float, float]:
-    """Convert a location string to (lat, lon) — mirrors n8n's Geo Coding API node."""
+    """Convert a location string to (lat, lon) using Places API text search — no Geocoding API needed."""
+    payload = {"textQuery": location, "maxResultCount": 1}
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": "places.location,places.formattedAddress",
+    }
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.get(GEOCODE_URL, params={"address": location, "key": api_key})
+        resp = await client.post(PLACES_NEW_SEARCH_URL, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
 
-    if data.get("status") != "OK" or not data.get("results"):
-        raise ValueError(f"Could not geocode '{location}': {data.get('status')}")
+    places = data.get("places", [])
+    if not places or "location" not in places[0]:
+        raise ValueError(f"Could not geocode '{location}': no results from Places API")
 
-    loc = data["results"][0]["geometry"]["location"]
-    return loc["lat"], loc["lng"]
+    loc = places[0]["location"]
+    return loc["latitude"], loc["longitude"]
 
 
 # ── Grid generation ───────────────────────────────────────────────────
