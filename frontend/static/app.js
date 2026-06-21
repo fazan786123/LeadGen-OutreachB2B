@@ -488,12 +488,21 @@ async function findPerson(leadId) {
 }
 
 async function bulkFindPersons() {
+  const btn = document.querySelector('[onclick="bulkFindPersons()"]');
+  const original = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Running…'; }
   try {
-    toast('Queuing people lookup for all leads...', 'info');
     const res = await api('POST', '/api/leads/find-persons-bulk');
-    toast(res.message, 'success');
+    if (res.queued === 0) {
+      toast('No leads need a decision-maker lookup', 'info');
+    } else {
+      toast(`${res.message} — table will refresh as results come in`, 'success');
+      _pollUntilStable(loadLeads, 180000);
+    }
   } catch (e) {
     toast('Error: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
   }
 }
 
@@ -724,12 +733,21 @@ async function runGridScrape() {
 }
 
 async function bulkFindEmails() {
+  const btn = document.querySelector('[onclick="bulkFindEmails()"]');
+  const original = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Running…'; }
   try {
-    toast('Queuing bulk email search...', 'info');
     const res = await api('POST', '/api/leads/find-emails-bulk');
-    toast(res.message, 'success');
+    if (res.queued === 0) {
+      toast('No leads need an email lookup (all searched or no domain)', 'info');
+    } else {
+      toast(`${res.message} — table will refresh as results come in`, 'success');
+      _pollUntilStable(loadLeads, 300000);
+    }
   } catch (e) {
     toast('Error: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
   }
 }
 
@@ -955,6 +973,27 @@ async function loadLogs() {
   } catch (e) {
     toast('Failed to load logs: ' + e.message, 'error');
   }
+}
+
+// Polls refreshFn every 5s until lead count stabilises or timeout expires
+function _pollUntilStable(refreshFn, timeoutMs = 180000) {
+  let lastCount = -1;
+  let stableRounds = 0;
+  const start = Date.now();
+  const iv = setInterval(async () => {
+    if (Date.now() - start > timeoutMs) { clearInterval(iv); return; }
+    try {
+      const data = await api('GET', '/api/leads?limit=1');
+      if (data.total === lastCount) {
+        stableRounds++;
+        if (stableRounds >= 3) { clearInterval(iv); return; }
+      } else {
+        stableRounds = 0;
+        lastCount = data.total;
+      }
+      await refreshFn();
+    } catch (_) { clearInterval(iv); }
+  }, 5000);
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────
