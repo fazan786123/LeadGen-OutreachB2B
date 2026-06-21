@@ -35,13 +35,16 @@ function badge(val, prefix = '') {
 function sourceBadge(source) {
   if (!source) return '';
   const map = {
-    website_scrape: { icon: '🌐', label: 'website', cls: 'source-website' },
-    pattern_guess:  { icon: '🔍', label: 'pattern', cls: 'source-pattern' },
-    apollo:         { icon: '🚀', label: 'apollo',  cls: 'source-api' },
-    snov:           { icon: '❄️',  label: 'snov',    cls: 'source-api' },
-    skrapp:         { icon: '🥊', label: 'skrapp',  cls: 'source-api' },
-    findthat:       { icon: '🔎', label: 'findthat',cls: 'source-api' },
-    hunter:         { icon: '🏹', label: 'hunter',  cls: 'source-api' },
+    website_scrape:  { icon: '🌐', label: 'website',  cls: 'source-website' },
+    team_page:       { icon: '👥', label: 'team page', cls: 'source-website' },
+    brave_linkedin:  { icon: '🔗', label: 'linkedin', cls: 'source-pattern' },
+    brave_search:    { icon: '🔍', label: 'web search',cls: 'source-pattern' },
+    pattern_guess:   { icon: '🔍', label: 'pattern',  cls: 'source-pattern' },
+    apollo:          { icon: '🚀', label: 'apollo',   cls: 'source-api' },
+    snov:            { icon: '❄️',  label: 'snov',     cls: 'source-api' },
+    skrapp:          { icon: '🥊', label: 'skrapp',   cls: 'source-api' },
+    findthat:        { icon: '🔎', label: 'findthat', cls: 'source-api' },
+    hunter:          { icon: '🏹', label: 'hunter',   cls: 'source-api' },
   };
   const m = map[source] || { icon: '?', label: source, cls: 'source-api' };
   return `<span class="${m.cls}" title="${source}">${m.icon} ${m.label}</span>`;
@@ -415,11 +418,10 @@ function renderContacts(lead) {
   if (!contacts.length) return '—';
 
   return contacts.map((c, i) => {
-    const sourceIcon = c.source === 'brave_linkedin' ? '🔗' : c.source === 'brave_search' ? '🔍' : '';
     return `<div style="${i > 0 ? 'margin-top:6px;padding-top:6px;border-top:1px solid var(--border)' : ''}">
       <strong style="font-size:12px">${esc(c.name)}</strong>
       ${c.title ? `<br><small style="color:var(--text2)">${esc(c.title)}</small>` : ''}
-      ${sourceIcon ? `<span style="margin-left:4px;font-size:10px">${sourceIcon}</span>` : ''}
+      ${c.source ? `<br>${sourceBadge(c.source)}` : ''}
     </div>`;
   }).join('');
 }

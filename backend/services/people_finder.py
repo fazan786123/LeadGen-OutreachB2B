@@ -14,6 +14,7 @@ Returns up to max_contacts (default 5) ranked by title priority.
 import re
 import httpx
 from typing import Optional
+from services.team_scraper import scrape_team_page
 
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 
@@ -163,53 +164,65 @@ async def find_decision_makers(
     max_contacts: int = 5,
 ) -> dict:
     """
-    Search Brave for decision-makers of a business. Returns up to max_contacts.
+    Multi-source decision-maker search. Returns up to max_contacts.
+
+    Sources tried in order:
+      1. Website team/about page scrape (free, no quota)
+      2. LinkedIn via Brave Search
+      3. General web via Brave Search
 
     Returns:
       {
         status: "found"|"not_found",
-        contacts: [{ name, title, source }],   # up to max_contacts
-        source: "brave_linkedin"|"brave_search"|None
+        contacts: [{ name, title, source }],
+        source: primary source used
       }
     """
-    if not api_key:
-        return {"status": "not_found", "contacts": [], "source": None}
-
     all_contacts: list[dict] = []
+    existing_names: set[str] = set()
 
-    # ── Query 1: LinkedIn ─────────────────────────────────────────────────
-    li_query = f'"{business_name}" site:linkedin.com/in'
-    try:
-        snippets = await _brave_search(li_query, api_key, count=10)
-        contacts = _extract_from_snippets(snippets, linkedin=True, max_contacts=max_contacts)
-        for c in contacts:
-            c["source"] = "brave_linkedin"
-        all_contacts.extend(contacts)
-    except Exception:
-        pass
+    def _merge(new_contacts: list[dict]):
+        for c in new_contacts:
+            if c["name"] not in existing_names:
+                existing_names.add(c["name"])
+                all_contacts.append(c)
 
-    # ── Query 2: General web ──────────────────────────────────────────────
-    if len(all_contacts) < max_contacts:
+    # ── Source 1: Website team page (free) ────────────────────────────────
+    if domain:
+        try:
+            contacts = await scrape_team_page(domain, max_contacts=max_contacts)
+            _merge(contacts)
+        except Exception:
+            pass
+
+    # ── Source 2: LinkedIn via Brave ──────────────────────────────────────
+    if api_key and len(all_contacts) < max_contacts:
+        li_query = f'"{business_name}" site:linkedin.com/in'
+        try:
+            snippets = await _brave_search(li_query, api_key, count=10)
+            contacts = _extract_from_snippets(snippets, linkedin=True, max_contacts=max_contacts)
+            for c in contacts:
+                c["source"] = "brave_linkedin"
+            _merge(contacts)
+        except Exception:
+            pass
+
+    # ── Source 3: General web via Brave ───────────────────────────────────
+    if api_key and len(all_contacts) < max_contacts:
         loc_part = f' "{location}"' if location else ""
         gen_query = f'"{business_name}"{loc_part} owner OR CEO OR founder OR director'
         try:
             snippets = await _brave_search(gen_query, api_key, count=10)
             contacts = _extract_from_snippets(snippets, linkedin=False, max_contacts=max_contacts)
-            # Deduplicate against LinkedIn results
-            existing_names = {c["name"] for c in all_contacts}
             for c in contacts:
-                if c["name"] not in existing_names:
-                    c["source"] = "brave_search"
-                    all_contacts.append(c)
-                    existing_names.add(c["name"])
-                    if len(all_contacts) >= max_contacts:
-                        break
+                c["source"] = "brave_search"
+            _merge(contacts)
         except Exception:
             pass
 
     if all_contacts:
-        primary_source = all_contacts[0]["source"]
-        return {"status": "found", "contacts": all_contacts[:max_contacts], "source": primary_source}
+        result = all_contacts[:max_contacts]
+        return {"status": "found", "contacts": result, "source": result[0]["source"]}
 
     return {"status": "not_found", "contacts": [], "source": None}
 
