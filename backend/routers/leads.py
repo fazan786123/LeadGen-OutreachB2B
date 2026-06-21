@@ -379,6 +379,8 @@ async def _bulk_find_persons(lead_ids: list[int], jid: str):
                 api_key=settings.brave_api_key,
                 max_contacts=5,
             )
+            for dbg in result.get("debug", []):
+                _job_log(jid, f"    [{dbg}]")
             if result["status"] == "found":
                 contacts = result["contacts"]
                 db.query(LeadContact).filter(LeadContact.lead_id == lead_id).delete()

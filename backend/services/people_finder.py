@@ -21,18 +21,27 @@ BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 # Titles we consider decision-makers, in priority order
 DM_TITLES = [
     "founder", "co-founder", "cofounder",
-    "owner", "co-owner",
+    "owner", "co-owner", "practice owner",
     "ceo", "chief executive",
     "president", "managing director", "md",
     "director", "principal",
     "partner", "managing partner",
     "head", "vp", "vice president",
-    "manager", "general manager",
+    "manager", "general manager", "practice manager",
+    # Medical / dental
+    "dentist", "principal dentist", "associate dentist",
+    "doctor", "dr", "physician", "surgeon", "consultant",
+    "therapist", "optician", "pharmacist", "practitioner",
+    # Legal / finance
+    "solicitor", "barrister", "accountant", "advisor", "adviser",
+    # Trades / services
+    "proprietor", "operator", "specialist",
 ]
 
 # LinkedIn snippet: "First Last - Title at Company · LinkedIn"
+# No ^ anchor — match anywhere in the snippet
 _LINKEDIN_RE = re.compile(
-    r'^([A-Z][a-z]+(?:\s[A-Z][a-z]+)+)\s[-–]\s([^·\n]{3,60}?)(?:\s(?:at|@)\s[^·\n]+)?\s[·|]',
+    r'([A-Z][a-z]+(?:\s[A-Z][a-z]+)+)\s[-–]\s([^·\n]{3,60}?)(?:\s(?:at|@)\s[^·\n]+)?\s[·|]',
     re.MULTILINE,
 )
 
@@ -163,23 +172,9 @@ async def find_decision_makers(
     api_key: str = "",
     max_contacts: int = 5,
 ) -> dict:
-    """
-    Multi-source decision-maker search. Returns up to max_contacts.
-
-    Sources tried in order:
-      1. Website team/about page scrape (free, no quota)
-      2. LinkedIn via Brave Search
-      3. General web via Brave Search
-
-    Returns:
-      {
-        status: "found"|"not_found",
-        contacts: [{ name, title, source }],
-        source: primary source used
-      }
-    """
     all_contacts: list[dict] = []
     existing_names: set[str] = set()
+    debug: list[str] = []
 
     def _merge(new_contacts: list[dict]):
         for c in new_contacts:
@@ -187,13 +182,14 @@ async def find_decision_makers(
                 existing_names.add(c["name"])
                 all_contacts.append(c)
 
-    # ── Source 1: Website team page (free) ────────────────────────────────
+    # ── Source 1: Website team page ───────────────────────────────────────
     if domain:
         try:
             contacts = await scrape_team_page(domain, max_contacts=max_contacts)
+            debug.append(f"team_page: {len(contacts)} contacts")
             _merge(contacts)
-        except Exception:
-            pass
+        except Exception as e:
+            debug.append(f"team_page error: {e}")
 
     # ── Source 2: LinkedIn via Brave ──────────────────────────────────────
     if api_key and len(all_contacts) < max_contacts:
@@ -201,30 +197,36 @@ async def find_decision_makers(
         try:
             snippets = await _brave_search(li_query, api_key, count=10)
             contacts = _extract_from_snippets(snippets, linkedin=True, max_contacts=max_contacts)
+            debug.append(f"linkedin: {len(snippets)} snippets → {len(contacts)} contacts")
             for c in contacts:
                 c["source"] = "brave_linkedin"
             _merge(contacts)
-        except Exception:
-            pass
+        except Exception as e:
+            debug.append(f"linkedin error: {e}")
 
     # ── Source 3: General web via Brave ───────────────────────────────────
     if api_key and len(all_contacts) < max_contacts:
         loc_part = f' "{location}"' if location else ""
-        gen_query = f'"{business_name}"{loc_part} owner OR CEO OR founder OR director'
+        gen_query = (
+            f'"{business_name}"{loc_part} '
+            f'owner OR CEO OR founder OR director OR manager OR dentist OR '
+            f'doctor OR principal OR proprietor OR partner'
+        )
         try:
             snippets = await _brave_search(gen_query, api_key, count=10)
             contacts = _extract_from_snippets(snippets, linkedin=False, max_contacts=max_contacts)
+            debug.append(f"web_search: {len(snippets)} snippets → {len(contacts)} contacts")
             for c in contacts:
                 c["source"] = "brave_search"
             _merge(contacts)
-        except Exception:
-            pass
+        except Exception as e:
+            debug.append(f"web_search error: {e}")
 
     if all_contacts:
         result = all_contacts[:max_contacts]
-        return {"status": "found", "contacts": result, "source": result[0]["source"]}
+        return {"status": "found", "contacts": result, "source": result[0]["source"], "debug": debug}
 
-    return {"status": "not_found", "contacts": [], "source": None}
+    return {"status": "not_found", "contacts": [], "source": None, "debug": debug}
 
 
 # Backwards-compatible single-result wrapper
