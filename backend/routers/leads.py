@@ -6,12 +6,12 @@ from typing import Optional
 from datetime import datetime
 
 from database import get_db
-from models import Lead, ScrapeJob
+from models import Lead, ScrapeJob, LeadContact
 from config import get_settings
 from services.google_maps import search_businesses, grid_search_businesses, deep_search_businesses
 from services.email_chain import find_email_chain
 from services.email_validator import validate_email, validate_emails_bulk
-from services.people_finder import find_decision_maker
+from services.people_finder import find_decision_maker, find_decision_makers
 
 router = APIRouter(prefix="/api/leads", tags=["leads"])
 settings = get_settings()
@@ -180,23 +180,36 @@ async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size
 
 @router.post("/{lead_id}/find-person")
 async def find_person(lead_id: int, db: Session = Depends(get_db)):
-    """Use Brave Search to find the decision-maker name + title for a single lead."""
+    """Use Brave Search to find up to 5 decision-makers for a single lead."""
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
     if not settings.brave_api_key:
         raise HTTPException(status_code=400, detail="BRAVE_API_KEY not set")
 
-    result = await find_decision_maker(
+    result = await find_decision_makers(
         business_name=lead.business_name,
         location=lead.address or "",
         domain=lead.domain or "",
         api_key=settings.brave_api_key,
+        max_contacts=5,
     )
 
     if result["status"] == "found":
-        lead.decision_maker_name = result["name"]
-        lead.decision_maker_title = result["title"]
+        # Clear old contacts for this lead
+        db.query(LeadContact).filter(LeadContact.lead_id == lead_id).delete()
+        for rank, c in enumerate(result["contacts"], start=1):
+            db.add(LeadContact(
+                lead_id=lead_id,
+                rank=rank,
+                name=c["name"],
+                title=c["title"],
+                source=c["source"],
+            ))
+        # Keep primary contact on Lead for backwards compat
+        primary = result["contacts"][0]
+        lead.decision_maker_name = primary["name"]
+        lead.decision_maker_title = primary["title"]
         lead.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(lead)
@@ -226,15 +239,26 @@ async def _bulk_find_persons(lead_ids: list[int]):
             lead = db.query(Lead).filter(Lead.id == lead_id).first()
             if not lead:
                 continue
-            result = await find_decision_maker(
+            result = await find_decision_makers(
                 business_name=lead.business_name,
                 location=lead.address or "",
                 domain=lead.domain or "",
                 api_key=settings.brave_api_key,
+                max_contacts=5,
             )
             if result["status"] == "found":
-                lead.decision_maker_name = result["name"]
-                lead.decision_maker_title = result["title"]
+                db.query(LeadContact).filter(LeadContact.lead_id == lead_id).delete()
+                for rank, c in enumerate(result["contacts"], start=1):
+                    db.add(LeadContact(
+                        lead_id=lead_id,
+                        rank=rank,
+                        name=c["name"],
+                        title=c["title"],
+                        source=c["source"],
+                    ))
+                primary = result["contacts"][0]
+                lead.decision_maker_name = primary["name"]
+                lead.decision_maker_title = primary["title"]
                 lead.updated_at = datetime.utcnow()
                 db.commit()
     finally:
@@ -439,6 +463,21 @@ async def _bulk_validate_bg(pairs: list[tuple[int, str]]):
         db.close()
 
 
+def _contact_dict(c: LeadContact) -> dict:
+    return {
+        "id": c.id,
+        "rank": c.rank,
+        "name": c.name,
+        "title": c.title,
+        "email": c.email,
+        "email_status": c.email_status,
+        "email_source": c.email_source,
+        "email_grade": c.email_grade,
+        "email_valid_reason": c.email_valid_reason,
+        "source": c.source,
+    }
+
+
 def _lead_dict(lead: Lead) -> dict:
     return {
         "id": lead.id,
@@ -464,4 +503,5 @@ def _lead_dict(lead: Lead) -> dict:
         "notes": lead.notes,
         "created_at": lead.created_at.isoformat() if lead.created_at else None,
         "updated_at": lead.updated_at.isoformat() if lead.updated_at else None,
+        "contacts": [_contact_dict(c) for c in lead.contacts] if lead.contacts else [],
     }

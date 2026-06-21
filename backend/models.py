@@ -36,6 +36,28 @@ class Lead(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     email_logs = relationship("EmailLog", back_populates="lead")
+    contacts = relationship("LeadContact", back_populates="lead", order_by="LeadContact.rank")
+
+
+class LeadContact(Base):
+    """Up to 5 decision-maker contacts per lead, ranked by title priority."""
+    __tablename__ = "lead_contacts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    rank = Column(Integer, default=1)  # 1 = primary, 2-5 = secondary
+    name = Column(String(255))
+    title = Column(String(255))
+    email = Column(String(255))
+    email_confidence = Column(Integer)
+    email_status = Column(String(50), default="not_searched")
+    email_source = Column(String(50))
+    email_grade = Column(String(20))
+    email_valid_reason = Column(String(100))
+    source = Column(String(50))  # brave_linkedin | brave_search
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    lead = relationship("Lead", back_populates="contacts")
 
 
 class ScrapeJob(Base):

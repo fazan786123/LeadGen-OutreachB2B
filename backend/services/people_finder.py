@@ -8,6 +8,7 @@ Strategy:
      Extracts names/titles from result snippets using heuristics
 
 Uses 1-2 queries per lead. Results cached in DB so each lead is only queried once.
+Returns up to max_contacts (default 5) ranked by title priority.
 """
 
 import re
@@ -34,27 +35,43 @@ _LINKEDIN_RE = re.compile(
     re.MULTILINE,
 )
 
-# General snippet patterns like "John Smith, CEO of Acme" / "CEO John Smith"
-_NAME_TITLE_RE = re.compile(
-    r'([A-Z][a-z]+(?:\s[A-Z][a-z]+)+),?\s+(' + '|'.join(DM_TITLES) + r')',
-    re.IGNORECASE,
-)
-_TITLE_NAME_RE = re.compile(
-    r'\b(' + '|'.join(DM_TITLES) + r')[,:]?\s+([A-Z][a-z]{1,}(?:\s[A-Z][a-z]{1,})+)',
-    re.IGNORECASE,
-)
+# Case-sensitive name pattern — [A-Z] only matches uppercase (no IGNORECASE flag)
+_NAME_PAT = r'([A-Z][a-z]{1,20}(?:\s[A-Z][a-z]{1,20}){1,3})'
 
-# Words that look capitalised but are NOT person names
+# Title pattern — case-insensitive via inline flag
+_TITLE_PAT = r'(?i:' + '|'.join(re.escape(t) for t in DM_TITLES) + r')'
+
+# "CEO John Smith" / "Director Jane Doe"
+_TITLE_NAME_RE = re.compile(r'\b' + _TITLE_PAT + r'[,:]?\s+' + _NAME_PAT)
+
+# "John Smith, CEO" / "Jane Doe - Director"
+_NAME_TITLE_RE = re.compile(_NAME_PAT + r'[,\s\-]+' + _TITLE_PAT + r'\b')
+
+# Words that are NOT person names even if capitalised
 _NOT_A_NAME = {
-    "including", "financials", "services", "solutions", "limited", "company",
-    "group", "associates", "partners", "practice", "clinic", "centre", "center",
-    "dental", "medical", "health", "care", "professional", "business", "the",
-    "and", "for", "with", "our", "all", "more", "contact", "about", "home",
-    "new", "view", "get", "find", "meet", "team", "staff", "management",
+    # Places / map words
+    "london", "manchester", "birmingham", "leeds", "bristol", "glasgow",
+    "edinburgh", "liverpool", "sheffield", "nottingham", "cardiff",
+    "maps", "street", "road", "avenue", "lane", "drive", "close",
+    # Search engines / brands
+    "google", "bing", "yahoo", "facebook", "linkedin", "twitter",
+    # Generic business words
+    "services", "solutions", "limited", "company", "group", "associates",
+    "partners", "practice", "clinic", "centre", "center", "dental", "medical",
+    "health", "care", "professional", "business", "enterprise", "enterprises",
+    "international", "national", "global", "local",
+    # Sector words
+    "surgery", "hospital", "academy", "school", "college", "university",
+    "institute", "trust", "foundation", "charity",
+    # Common false-positive words
+    "the", "and", "for", "with", "our", "all", "more", "including",
+    "contact", "about", "home", "new", "view", "get", "find",
+    "meet", "team", "staff", "management", "financials",
 }
 
+
 def _is_valid_name(name: str) -> bool:
-    """Return True only if every word in the name looks like a real person's name."""
+    """Return True only if the name looks like a real person."""
     words = name.strip().split()
     if len(words) < 2 or len(words) > 4:
         return False
@@ -62,6 +79,11 @@ def _is_valid_name(name: str) -> bool:
         if w.lower() in _NOT_A_NAME:
             return False
         if len(w) < 2:
+            return False
+        if not w[0].isupper():
+            return False
+        # Reject all-caps abbreviations like "NHS", "CEO" captured as name
+        if w.isupper() and len(w) > 2:
             return False
     return True
 
@@ -74,20 +96,19 @@ def _title_priority(title: str) -> int:
     return 99
 
 
-def _extract_from_snippets(snippets: list[str], linkedin: bool = False) -> Optional[dict]:
-    best = None
-    best_priority = 99
+def _extract_from_snippets(snippets: list[str], linkedin: bool = False, max_contacts: int = 5) -> list[dict]:
+    """Return up to max_contacts unique contacts ranked by title priority."""
+    seen_names: set[str] = set()
+    candidates: list[tuple[int, dict]] = []  # (priority, contact)
 
     for snippet in snippets:
         if linkedin:
             m = _LINKEDIN_RE.search(snippet)
             if m:
                 name, title = m.group(1).strip(), m.group(2).strip()
-                if _is_valid_name(name):
-                    p = _title_priority(title)
-                    if p < best_priority:
-                        best_priority = p
-                        best = {"name": name, "title": title}
+                if _is_valid_name(name) and name not in seen_names:
+                    seen_names.add(name)
+                    candidates.append((_title_priority(title), {"name": name, "title": title}))
             continue
 
         for pattern, name_grp, title_grp in [
@@ -99,12 +120,13 @@ def _extract_from_snippets(snippets: list[str], linkedin: bool = False) -> Optio
                 title = m.group(title_grp).strip()
                 if not _is_valid_name(name):
                     continue
-                p = _title_priority(title)
-                if p < best_priority:
-                    best_priority = p
-                    best = {"name": name, "title": title}
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                candidates.append((_title_priority(title), {"name": name, "title": title}))
 
-    return best
+    candidates.sort(key=lambda x: x[0])
+    return [c for _, c in candidates[:max_contacts]]
 
 
 async def _brave_search(query: str, api_key: str, count: int = 5) -> list[str]:
@@ -133,40 +155,74 @@ async def _brave_search(query: str, api_key: str, count: int = 5) -> list[str]:
     return snippets
 
 
+async def find_decision_makers(
+    business_name: str,
+    location: str = "",
+    domain: str = "",
+    api_key: str = "",
+    max_contacts: int = 5,
+) -> dict:
+    """
+    Search Brave for decision-makers of a business. Returns up to max_contacts.
+
+    Returns:
+      {
+        status: "found"|"not_found",
+        contacts: [{ name, title, source }],   # up to max_contacts
+        source: "brave_linkedin"|"brave_search"|None
+      }
+    """
+    if not api_key:
+        return {"status": "not_found", "contacts": [], "source": None}
+
+    all_contacts: list[dict] = []
+
+    # ── Query 1: LinkedIn ─────────────────────────────────────────────────
+    li_query = f'"{business_name}" site:linkedin.com/in'
+    try:
+        snippets = await _brave_search(li_query, api_key, count=10)
+        contacts = _extract_from_snippets(snippets, linkedin=True, max_contacts=max_contacts)
+        for c in contacts:
+            c["source"] = "brave_linkedin"
+        all_contacts.extend(contacts)
+    except Exception:
+        pass
+
+    # ── Query 2: General web ──────────────────────────────────────────────
+    if len(all_contacts) < max_contacts:
+        loc_part = f' "{location}"' if location else ""
+        gen_query = f'"{business_name}"{loc_part} owner OR CEO OR founder OR director'
+        try:
+            snippets = await _brave_search(gen_query, api_key, count=10)
+            contacts = _extract_from_snippets(snippets, linkedin=False, max_contacts=max_contacts)
+            # Deduplicate against LinkedIn results
+            existing_names = {c["name"] for c in all_contacts}
+            for c in contacts:
+                if c["name"] not in existing_names:
+                    c["source"] = "brave_search"
+                    all_contacts.append(c)
+                    existing_names.add(c["name"])
+                    if len(all_contacts) >= max_contacts:
+                        break
+        except Exception:
+            pass
+
+    if all_contacts:
+        primary_source = all_contacts[0]["source"]
+        return {"status": "found", "contacts": all_contacts[:max_contacts], "source": primary_source}
+
+    return {"status": "not_found", "contacts": [], "source": None}
+
+
+# Backwards-compatible single-result wrapper
 async def find_decision_maker(
     business_name: str,
     location: str = "",
     domain: str = "",
     api_key: str = "",
 ) -> dict:
-    """
-    Search Brave for the decision-maker of a business.
-
-    Returns:
-      { status: "found"|"not_found", name, title, source: "brave_linkedin"|"brave_search" }
-    """
-    if not api_key:
-        return {"status": "not_found", "name": None, "title": None, "source": None}
-
-    # ── Query 1: LinkedIn ─────────────────────────────────────────────────
-    li_query = f'"{business_name}" site:linkedin.com/in'
-    try:
-        snippets = await _brave_search(li_query, api_key, count=5)
-        result = _extract_from_snippets(snippets, linkedin=True)
-        if result:
-            return {**result, "status": "found", "source": "brave_linkedin"}
-    except Exception:
-        pass  # fall through to general search
-
-    # ── Query 2: General web ──────────────────────────────────────────────
-    loc_part = f' "{location}"' if location else ""
-    gen_query = f'"{business_name}"{loc_part} owner OR CEO OR founder OR director'
-    try:
-        snippets = await _brave_search(gen_query, api_key, count=5)
-        result = _extract_from_snippets(snippets, linkedin=False)
-        if result:
-            return {**result, "status": "found", "source": "brave_search"}
-    except Exception:
-        pass
-
+    result = await find_decision_makers(business_name, location, domain, api_key, max_contacts=1)
+    if result["status"] == "found" and result["contacts"]:
+        c = result["contacts"][0]
+        return {"status": "found", "name": c["name"], "title": c["title"], "source": c["source"]}
     return {"status": "not_found", "name": None, "title": None, "source": None}

@@ -406,6 +406,24 @@ async function loadLeads() {
   }
 }
 
+function renderContacts(lead) {
+  // Use contacts array if available, fall back to legacy single-contact fields
+  const contacts = (lead.contacts && lead.contacts.length)
+    ? lead.contacts
+    : (lead.decision_maker_name ? [{ name: lead.decision_maker_name, title: lead.decision_maker_title, source: lead.email_source }] : []);
+
+  if (!contacts.length) return '—';
+
+  return contacts.map((c, i) => {
+    const sourceIcon = c.source === 'brave_linkedin' ? '🔗' : c.source === 'brave_search' ? '🔍' : '';
+    return `<div style="${i > 0 ? 'margin-top:6px;padding-top:6px;border-top:1px solid var(--border)' : ''}">
+      <strong style="font-size:12px">${esc(c.name)}</strong>
+      ${c.title ? `<br><small style="color:var(--text2)">${esc(c.title)}</small>` : ''}
+      ${sourceIcon ? `<span style="margin-left:4px;font-size:10px">${sourceIcon}</span>` : ''}
+    </div>`;
+  }).join('');
+}
+
 function renderLeadsTable(leads) {
   const tbody = document.getElementById('leads-tbody');
   const isNoWebsite = _activeTab === 'no-website';
@@ -427,9 +445,7 @@ function renderLeadsTable(leads) {
       <td>${l.phone ? `<a href="tel:${esc(l.phone)}" style="color:var(--text);font-size:12px">${esc(l.phone)}</a>` : '—'}</td>
       <td>${l.rating ? `⭐ ${l.rating} <small style="color:var(--text2)">(${l.review_count || 0})</small>` : '—'}</td>
       <td><small style="color:var(--text2)">${esc(l.category || '—')}</small></td>
-      <td>${l.decision_maker_name
-        ? `<strong>${esc(l.decision_maker_name)}</strong>${l.decision_maker_title ? `<br><small style="color:var(--text2)">${esc(l.decision_maker_title)}</small>` : ''}`
-        : '—'}</td>
+      <td>${renderContacts(l)}</td>
       <td>${l.decision_maker_email
         ? `<small>${esc(l.decision_maker_email)}</small><br>${sourceBadge(l.email_source)}`
         : badge(l.email_status)}</td>
@@ -451,7 +467,8 @@ async function findPerson(leadId) {
     toast('Searching Brave for decision-maker...', 'info');
     const res = await api('POST', `/api/leads/${leadId}/find-person`);
     if (res.status === 'found') {
-      toast(`Found: ${res.lead.decision_maker_name} (${res.lead.decision_maker_title || 'no title'}) via ${res.source}`, 'success');
+      const n = res.lead.contacts?.length || 1;
+      toast(`Found ${n} contact${n > 1 ? 's' : ''}: ${res.lead.decision_maker_name} via ${res.source}`, 'success');
     } else {
       toast('No decision-maker found', 'error');
     }
