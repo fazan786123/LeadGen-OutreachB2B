@@ -212,6 +212,25 @@ async def findthat_find(domain: str, api_key: str) -> dict:
 
 # ── Hunter.io ─────────────────────────────────────────────────────────
 
+async def hunter_has_emails(domain: str, api_key: str) -> bool:
+    """
+    Free preflight check — asks Hunter how many emails they have for a domain.
+    Uses limit=0 so no credit is consumed. Returns True only if count > 0.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://api.hunter.io/v2/domain-search",
+                params={"domain": domain, "api_key": api_key, "limit": 0},
+            )
+            if not resp.is_success:
+                return True  # unknown — allow the real call to decide
+            data = resp.json()
+        return (data.get("data", {}).get("meta", {}).get("results", 0) or 0) > 0
+    except Exception:
+        return True  # network error — allow the real call to decide
+
+
 async def hunter_find(domain: str, api_key: str) -> dict:
     """
     Hunter.io Domain Search.

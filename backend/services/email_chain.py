@@ -16,7 +16,7 @@ Each tier is skipped silently if its API key is not configured.
 from config import get_settings
 from services.website_scraper import scrape_website_email
 from services.pattern_guesser import guess_email_for_domain
-from services.email_finder import apollo_find, snov_find, skrapp_find, findthat_find, hunter_find
+from services.email_finder import apollo_find, snov_find, skrapp_find, findthat_find, hunter_find, hunter_has_emails
 
 
 def _should_retry_on_credits(result: dict) -> bool:
@@ -93,17 +93,22 @@ async def find_email_chain(domain: str, website: str = "") -> dict:
         if result["status"] == "found":
             return {**result, "tried": tried}
 
-    # Hunter.io — last resort (fewest free credits); rotates keys if credits run out
+    # Hunter.io — last resort (fewest free credits); preflight check first
     hunter_keys = settings.hunter_api_keys
     if hunter_keys:
-        tried.append("hunter")
-        for key in hunter_keys:
-            result = await hunter_find(domain, key)
-            if result["status"] == "found":
-                return {**result, "tried": tried}
-            if result["status"] == "not_found":
-                break
-            if not _should_retry_on_credits(result):
-                break
+        # Free preflight: skip entirely if Hunter has 0 emails for this domain
+        has_data = await hunter_has_emails(domain, hunter_keys[0])
+        if has_data:
+            tried.append("hunter")
+            for key in hunter_keys:
+                result = await hunter_find(domain, key)
+                if result["status"] == "found":
+                    return {**result, "tried": tried}
+                if result["status"] == "not_found":
+                    break
+                if not _should_retry_on_credits(result):
+                    break
+        else:
+            tried.append("hunter_skipped")
 
     return {"status": "not_found", "source": None, "tried": tried}
