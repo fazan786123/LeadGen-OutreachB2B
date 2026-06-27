@@ -444,10 +444,10 @@ function renderLeadsTable(leads) {
   }
 
   tbody.innerHTML = leads.map(l => `
-    <tr style="${l.email_grade === 'invalid' ? 'opacity:0.5' : ''}">
+    <tr class="lead-row" onclick="openLeadPanel(${l.id})" style="${l.email_grade === 'invalid' ? 'opacity:0.5' : ''}">
       <td>
         <strong>${esc(l.business_name)}</strong>
-        ${l.maps_url ? `<br><a href="${esc(l.maps_url)}" target="_blank" style="color:var(--accent);font-size:11px">Maps</a>` : ''}
+        ${l.maps_url ? `<br><a href="${esc(l.maps_url)}" target="_blank" style="color:var(--accent);font-size:11px" onclick="event.stopPropagation()">Maps</a>` : ''}
       </td>
       <td>${l.website ? `<a href="${esc(l.website)}" target="_blank" style="color:var(--accent)">${esc(l.domain || l.website)}</a>` : '<span style="color:var(--warn)">No website</span>'}</td>
       <td><small style="color:var(--text2)">${esc(l.address || '—')}</small></td>
@@ -460,11 +460,10 @@ function renderLeadsTable(leads) {
         : badge(l.email_status)}</td>
       <td>${gradeBadge(l.email_grade, l.email_valid_reason)}</td>
       <td>${badge(l.status)}</td>
-      <td>
+      <td onclick="event.stopPropagation()">
         ${!l.decision_maker_name ? `<button class="btn btn-sm btn-ghost" onclick="findPerson(${l.id})" title="Find decision-maker">👤</button> ` : ''}
         ${!l.decision_maker_email && l.domain ? `<button class="btn btn-sm btn-primary" onclick="findEmail(${l.id})">Find Email</button> ` : ''}
         ${l.decision_maker_email && !l.email_grade ? `<button class="btn btn-sm btn-warn" onclick="validateEmail(${l.id})">Validate</button> ` : ''}
-        <button class="btn btn-sm btn-ghost" onclick="editLead(${l.id})">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteLead(${l.id})">✕</button>
       </td>
     </tr>
@@ -1037,6 +1036,175 @@ function _pollUntilStable(refreshFn, timeoutMs = 180000) {
       await refreshFn();
     } catch (_) { clearInterval(iv); }
   }, 5000);
+}
+
+// ── Lead Detail Panel ──────────────────────────────────────────────────
+let _panelLeadId = null;
+
+async function openLeadPanel(leadId) {
+  _panelLeadId = leadId;
+  const overlay = document.getElementById('lead-panel-overlay');
+  const panel = document.getElementById('lead-panel');
+  overlay.classList.add('open');
+  panel.classList.add('open');
+
+  // Reset to loading state
+  document.getElementById('lp-title').textContent = 'Loading...';
+  document.getElementById('lp-sub').textContent = '';
+  document.getElementById('lp-contacts').innerHTML = '<span style="color:var(--text2);font-size:13px">Loading...</span>';
+  document.getElementById('lp-email-logs').innerHTML = '<span style="color:var(--text2);font-size:13px">Loading...</span>';
+
+  try {
+    const lead = await api('GET', `/api/leads/${leadId}`);
+    populateLeadPanel(lead);
+  } catch (e) {
+    document.getElementById('lp-title').textContent = 'Error loading lead';
+  }
+}
+
+function closeLeadPanel() {
+  document.getElementById('lead-panel-overlay').classList.remove('open');
+  document.getElementById('lead-panel').classList.remove('open');
+  _panelLeadId = null;
+}
+
+function populateLeadPanel(lead) {
+  // Header
+  document.getElementById('lp-title').textContent = lead.business_name;
+  document.getElementById('lp-sub').textContent = lead.address || '—';
+
+  // Business info
+  document.getElementById('lp-phone').innerHTML = lead.phone
+    ? `<a href="tel:${esc(lead.phone)}" style="color:var(--accent)">${esc(lead.phone)}</a>` : '—';
+  document.getElementById('lp-rating').textContent = lead.rating
+    ? `⭐ ${lead.rating} (${lead.review_count || 0} reviews)` : '—';
+  document.getElementById('lp-category').textContent = lead.category || '—';
+  document.getElementById('lp-website').innerHTML = lead.website
+    ? `<a href="${esc(lead.website)}" target="_blank" style="color:var(--accent)">${esc(lead.domain || lead.website)}</a>` : 'No website';
+  document.getElementById('lp-address').textContent = lead.address || '—';
+
+  // Maps link
+  const mapsLink = document.getElementById('lp-maps-link');
+  if (lead.maps_url) { mapsLink.href = lead.maps_url; mapsLink.style.display = ''; }
+  else mapsLink.style.display = 'none';
+
+  // Contacts
+  const contactsEl = document.getElementById('lp-contacts');
+  const contacts = lead.contacts && lead.contacts.length ? lead.contacts : [];
+  if (contacts.length) {
+    contactsEl.innerHTML = contacts.map(c => `
+      <div class="contact-card">
+        <div class="contact-card-left">
+          <div class="contact-card-name">${esc(c.name)}</div>
+          <div class="contact-card-title">${esc(c.title || '—')}</div>
+          ${c.email ? `<div style="font-size:11px;color:var(--accent);margin-top:2px">${esc(c.email)}</div>` : ''}
+        </div>
+        <div>${sourceBadge(c.source)}</div>
+      </div>
+    `).join('');
+  } else if (lead.decision_maker_name) {
+    contactsEl.innerHTML = `
+      <div class="contact-card">
+        <div class="contact-card-left">
+          <div class="contact-card-name">${esc(lead.decision_maker_name)}</div>
+          <div class="contact-card-title">${esc(lead.decision_maker_title || '—')}</div>
+        </div>
+      </div>`;
+  } else {
+    contactsEl.innerHTML = `<span style="color:var(--text2);font-size:13px">No contacts found yet</span>`;
+  }
+
+  // Email
+  document.getElementById('lp-email').innerHTML = lead.decision_maker_email
+    ? `<strong style="color:var(--accent2)">${esc(lead.decision_maker_email)}</strong>` : '—';
+  document.getElementById('lp-email-source').innerHTML = lead.email_source ? sourceBadge(lead.email_source) : '—';
+  document.getElementById('lp-email-grade').innerHTML = gradeBadge(lead.email_grade, lead.email_valid_reason);
+
+  // Status & notes
+  document.getElementById('lp-status').value = lead.status || 'new';
+  document.getElementById('lp-notes').value = lead.notes || '';
+
+  // Email history
+  const logsEl = document.getElementById('lp-email-logs');
+  const logs = lead.email_logs || [];
+  if (logs.length) {
+    logsEl.innerHTML = logs.map(log => `
+      <div class="email-log-item">
+        <div class="email-log-subject">${esc(log.subject || '(no subject)')}</div>
+        <div class="email-log-meta">
+          To: ${esc(log.to_email)} &nbsp;·&nbsp;
+          ${badge(log.status)} &nbsp;·&nbsp;
+          ${log.sent_at ? new Date(log.sent_at).toLocaleString() : log.created_at ? new Date(log.created_at).toLocaleString() : '—'}
+        </div>
+        ${log.error_message ? `<div style="font-size:11px;color:var(--danger);margin-top:4px">${esc(log.error_message)}</div>` : ''}
+      </div>
+    `).join('');
+  } else {
+    logsEl.innerHTML = `<span style="color:var(--text2);font-size:13px">No emails sent yet</span>`;
+  }
+
+  // Footer buttons
+  document.getElementById('lp-btn-person').textContent = contacts.length ? '👤 Re-search' : '👤 Find Person';
+  document.getElementById('lp-btn-email').style.display = lead.domain ? '' : 'none';
+  document.getElementById('lp-btn-validate').style.display = lead.decision_maker_email ? '' : 'none';
+}
+
+async function updateLeadStatus() {
+  if (!_panelLeadId) return;
+  const status = document.getElementById('lp-status').value;
+  await api('PATCH', `/api/leads/${_panelLeadId}`, { status });
+  await loadLeads();
+}
+
+async function saveLeadNotes() {
+  if (!_panelLeadId) return;
+  const notes = document.getElementById('lp-notes').value;
+  await api('PATCH', `/api/leads/${_panelLeadId}`, { notes });
+}
+
+async function findPersonFromPanel() {
+  if (!_panelLeadId) return;
+  document.getElementById('lp-btn-person').textContent = '⏳ Searching...';
+  try {
+    const res = await api('POST', `/api/leads/${_panelLeadId}/find-person`);
+    if (res.status === 'found') {
+      const n = res.lead.contacts?.length || 1;
+      toast(`Found ${n} contact${n > 1 ? 's' : ''} via ${res.source}`, 'success');
+      populateLeadPanel(await api('GET', `/api/leads/${_panelLeadId}`));
+    } else {
+      toast('No decision-maker found', 'error');
+      document.getElementById('lp-btn-person').textContent = '👤 Find Person';
+    }
+    await loadLeads();
+  } catch (e) {
+    document.getElementById('lp-btn-person').textContent = '👤 Find Person';
+  }
+}
+
+async function findEmailFromPanel() {
+  if (!_panelLeadId) return;
+  document.getElementById('lp-btn-email').textContent = '⏳ Searching...';
+  try {
+    const res = await api('POST', `/api/leads/${_panelLeadId}/find-email`);
+    toast(res.status === 'found' ? `Found: ${res.lead.decision_maker_email}` : 'No email found', res.status === 'found' ? 'success' : 'error');
+    populateLeadPanel(await api('GET', `/api/leads/${_panelLeadId}`));
+    await loadLeads();
+  } catch (e) {
+    document.getElementById('lp-btn-email').textContent = '🔍 Find Email';
+  }
+}
+
+async function validateEmailFromPanel() {
+  if (!_panelLeadId) return;
+  document.getElementById('lp-btn-validate').textContent = '⏳ Validating...';
+  try {
+    const res = await api('POST', `/api/leads/${_panelLeadId}/validate-email`);
+    toast(`Grade: ${res.grade} — ${res.reason || ''}`, res.grade === 'valid' ? 'success' : 'error');
+    populateLeadPanel(await api('GET', `/api/leads/${_panelLeadId}`));
+    await loadLeads();
+  } catch (e) {
+    document.getElementById('lp-btn-validate').textContent = '✓ Validate';
+  }
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────

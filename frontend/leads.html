@@ -89,6 +89,100 @@
   </div>
 </div>
 
+<!-- Lead Detail Panel -->
+<div class="lead-panel-overlay" id="lead-panel-overlay" onclick="closeLeadPanel()"></div>
+<div class="lead-panel" id="lead-panel">
+  <div class="lead-panel-header">
+    <div>
+      <div class="lead-panel-title" id="lp-title">—</div>
+      <div class="lead-panel-sub" id="lp-sub">—</div>
+    </div>
+    <button class="lead-panel-close" onclick="closeLeadPanel()">✕</button>
+  </div>
+
+  <div class="lead-panel-body">
+
+    <!-- Business Info -->
+    <div class="lead-panel-section">
+      <div class="lead-panel-section-title">Business Info</div>
+      <div class="lead-info-grid">
+        <div class="lead-info-item">
+          <span class="lead-info-label">Phone</span>
+          <span class="lead-info-value" id="lp-phone">—</span>
+        </div>
+        <div class="lead-info-item">
+          <span class="lead-info-label">Rating</span>
+          <span class="lead-info-value" id="lp-rating">—</span>
+        </div>
+        <div class="lead-info-item">
+          <span class="lead-info-label">Category</span>
+          <span class="lead-info-value" id="lp-category">—</span>
+        </div>
+        <div class="lead-info-item">
+          <span class="lead-info-label">Website</span>
+          <span class="lead-info-value" id="lp-website">—</span>
+        </div>
+        <div class="lead-info-item" style="grid-column:1/-1">
+          <span class="lead-info-label">Address</span>
+          <span class="lead-info-value" id="lp-address">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contacts -->
+    <div class="lead-panel-section">
+      <div class="lead-panel-section-title">Decision Makers</div>
+      <div id="lp-contacts">—</div>
+    </div>
+
+    <!-- Email -->
+    <div class="lead-panel-section">
+      <div class="lead-panel-section-title">Email</div>
+      <div class="lead-info-grid">
+        <div class="lead-info-item" style="grid-column:1/-1">
+          <span class="lead-info-label">Address</span>
+          <span class="lead-info-value" id="lp-email">—</span>
+        </div>
+        <div class="lead-info-item">
+          <span class="lead-info-label">Source</span>
+          <span class="lead-info-value" id="lp-email-source">—</span>
+        </div>
+        <div class="lead-info-item">
+          <span class="lead-info-label">Grade</span>
+          <span class="lead-info-value" id="lp-email-grade">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status & Notes -->
+    <div class="lead-panel-section">
+      <div class="lead-panel-section-title">Status & Notes</div>
+      <select class="status-select" id="lp-status" onchange="updateLeadStatus()">
+        <option value="new">New</option>
+        <option value="contacted">Contacted</option>
+        <option value="replied">Replied</option>
+        <option value="converted">Converted</option>
+        <option value="unsubscribed">Unsubscribed</option>
+      </select>
+      <textarea class="panel-notes" id="lp-notes" placeholder="Add notes..." onblur="saveLeadNotes()"></textarea>
+    </div>
+
+    <!-- Email History -->
+    <div class="lead-panel-section">
+      <div class="lead-panel-section-title">Email History</div>
+      <div id="lp-email-logs">—</div>
+    </div>
+
+  </div>
+
+  <div class="lead-panel-footer">
+    <button class="btn btn-ghost" id="lp-btn-person" onclick="findPersonFromPanel()">👤 Find Person</button>
+    <button class="btn btn-primary" id="lp-btn-email" onclick="findEmailFromPanel()">🔍 Find Email</button>
+    <button class="btn btn-warn" id="lp-btn-validate" onclick="validateEmailFromPanel()">✓ Validate</button>
+    <a id="lp-maps-link" href="#" target="_blank" class="btn btn-ghost" style="text-decoration:none">🗺 Maps</a>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 <script src="/static/app.js"></script>
 <script>initLeads();</script>

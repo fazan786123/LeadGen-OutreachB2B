@@ -533,7 +533,22 @@ def get_lead(lead_id: int, db: Session = Depends(get_db)):
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    return _lead_dict(lead)
+    d = _lead_dict(lead)
+    d["email_logs"] = [
+        {
+            "id": log.id,
+            "campaign_id": log.campaign_id,
+            "to_email": log.to_email,
+            "subject": log.subject,
+            "body_preview": log.body_preview,
+            "status": log.status,
+            "error_message": log.error_message,
+            "sent_at": log.sent_at.isoformat() if log.sent_at else None,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        }
+        for log in lead.email_logs
+    ]
+    return d
 
 
 @router.patch("/{lead_id}")
