@@ -374,22 +374,42 @@ async function _waitForBulk(step, pctStart, pctEnd) {
 
 
 // ── Leads page ────────────────────────────────────────────────────────
-let leadsPage = { skip: 0, limit: 50 };
+const PAGE_SIZE = 50;
+let _leadsCurrentPage = 1;
+let _leadsTotalPages = 1;
+let _leadsTotalCount = 0;
 let _activeTab = 'all';
 
 async function initLeads() {
   await loadLeads();
-  document.getElementById('search-input').addEventListener('input', debounce(loadLeads, 400));
-  document.getElementById('filter-status').addEventListener('change', loadLeads);
-  document.getElementById('filter-email-status').addEventListener('change', loadLeads);
-  document.getElementById('filter-grade')?.addEventListener('change', loadLeads);
+  document.getElementById('search-input').addEventListener('input', debounce(() => { _leadsCurrentPage = 1; loadLeads(); }, 400));
+  document.getElementById('filter-status').addEventListener('change', () => { _leadsCurrentPage = 1; loadLeads(); });
+  document.getElementById('filter-email-status').addEventListener('change', () => { _leadsCurrentPage = 1; loadLeads(); });
+  document.getElementById('filter-grade')?.addEventListener('change', () => { _leadsCurrentPage = 1; loadLeads(); });
 }
 
 function switchTab(tab, el) {
   _activeTab = tab;
+  _leadsCurrentPage = 1;
   document.querySelectorAll('.leads-tab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
   loadLeads();
+}
+
+function changePage(delta) {
+  const next = _leadsCurrentPage + delta;
+  if (next < 1 || next > _leadsTotalPages) return;
+  _leadsCurrentPage = next;
+  loadLeads();
+  // Scroll table back to top
+  document.querySelector('.table-wrapper')?.scrollTo(0, 0);
+}
+
+function goToPage(page) {
+  if (page < 1 || page > _leadsTotalPages) return;
+  _leadsCurrentPage = page;
+  loadLeads();
+  document.querySelector('.table-wrapper')?.scrollTo(0, 0);
 }
 
 async function loadLeads() {
@@ -397,8 +417,9 @@ async function loadLeads() {
   const status = document.getElementById('filter-status')?.value || '';
   const emailStatus = document.getElementById('filter-email-status')?.value || '';
   const grade = document.getElementById('filter-grade')?.value || '';
+  const skip = (_leadsCurrentPage - 1) * PAGE_SIZE;
 
-  const params = new URLSearchParams({ skip: leadsPage.skip, limit: leadsPage.limit });
+  const params = new URLSearchParams({ skip, limit: PAGE_SIZE });
   if (search) params.set('search', search);
   if (status) params.set('status', status);
   if (emailStatus) params.set('email_status', emailStatus);
@@ -408,12 +429,62 @@ async function loadLeads() {
 
   try {
     const data = await api('GET', `/api/leads?${params}`);
+    _leadsTotalCount = data.total;
+    _leadsTotalPages = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+
+    // Clamp current page if filters reduced total
+    if (_leadsCurrentPage > _leadsTotalPages) {
+      _leadsCurrentPage = _leadsTotalPages;
+    }
+
     renderLeadsTable(data.leads);
-    const tabLabel = _activeTab === 'no-website' ? 'leads without a website' : _activeTab === 'with-website' ? 'leads with a website' : 'leads';
-    document.getElementById('leads-count').textContent = `${data.total} ${tabLabel}`;
+    renderPagination();
+
+    const tabLabel = _activeTab === 'no-website' ? 'leads without a website'
+      : _activeTab === 'with-website' ? 'leads with a website' : 'leads';
+    document.getElementById('leads-count').textContent = `${data.total.toLocaleString()} ${tabLabel}`;
   } catch (e) {
     toast('Failed to load leads: ' + e.message, 'error');
   }
+}
+
+function renderPagination() {
+  const bar = document.getElementById('pagination-bar');
+  const pagesEl = document.getElementById('pg-pages');
+  const infoEl = document.getElementById('pg-info');
+  const prevBtn = document.getElementById('pg-prev');
+  const nextBtn = document.getElementById('pg-next');
+
+  if (_leadsTotalPages <= 1) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+
+  prevBtn.disabled = _leadsCurrentPage === 1;
+  nextBtn.disabled = _leadsCurrentPage === _leadsTotalPages;
+
+  // Build page number buttons with ellipsis for large ranges
+  const pages = [];
+  const cur = _leadsCurrentPage;
+  const total = _leadsTotalPages;
+
+  if (total <= 7) {
+    for (let i = 1; i <= total; i++) pages.push(i);
+  } else {
+    pages.push(1);
+    if (cur > 3) pages.push('…');
+    for (let i = Math.max(2, cur - 1); i <= Math.min(total - 1, cur + 1); i++) pages.push(i);
+    if (cur < total - 2) pages.push('…');
+    pages.push(total);
+  }
+
+  pagesEl.innerHTML = pages.map(p =>
+    p === '…'
+      ? `<span class="pg-btn ellipsis">…</span>`
+      : `<button class="pg-btn${p === cur ? ' active' : ''}" onclick="goToPage(${p})">${p}</button>`
+  ).join('');
+
+  const start = (_leadsCurrentPage - 1) * PAGE_SIZE + 1;
+  const end = Math.min(_leadsCurrentPage * PAGE_SIZE, _leadsTotalCount);
+  infoEl.textContent = `${start.toLocaleString()}–${end.toLocaleString()} of ${_leadsTotalCount.toLocaleString()}`;
 }
 
 function renderContacts(lead) {

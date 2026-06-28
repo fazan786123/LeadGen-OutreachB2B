@@ -79,6 +79,12 @@
         </tbody>
       </table>
     </div>
+    <div class="pagination-bar" id="pagination-bar" style="display:none">
+      <button class="btn btn-ghost btn-sm" id="pg-prev" onclick="changePage(-1)">← Prev</button>
+      <div class="pg-pages" id="pg-pages"></div>
+      <button class="btn btn-ghost btn-sm" id="pg-next" onclick="changePage(1)">Next →</button>
+      <span class="pg-info" id="pg-info"></span>
+    </div>
   </div>
 </div>
 
