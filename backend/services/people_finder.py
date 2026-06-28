@@ -15,6 +15,7 @@ import re
 import httpx
 from typing import Optional
 from services.team_scraper import scrape_team_page
+from services.parallel_finder import parallel_find_people
 
 BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 BRAVE_SUMMARIZER_URL = "https://api.search.brave.com/res/v1/summarizer/search"
@@ -282,6 +283,19 @@ async def find_decision_makers(
                 debug.append("summarizer: no summary returned")
         except Exception as e:
             debug.append(f"summarizer error: {e}")
+
+    # ── Source 4: Parallel.ai deep web research (paid fallback) ──────────
+    if len(all_contacts) < max_contacts:
+        from config import get_settings
+        parallel_key = get_settings().parallel_api_key
+        if parallel_key:
+            try:
+                contacts = await parallel_find_people(
+                    business_name, location, domain, parallel_key, max_contacts
+                )
+                _merge(contacts)
+            except Exception:
+                pass
 
     if all_contacts:
         result = all_contacts[:max_contacts]
