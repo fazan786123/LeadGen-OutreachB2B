@@ -439,35 +439,35 @@ function renderLeadsTable(leads) {
 
   if (!leads.length) {
     const msg = isNoWebsite ? 'No leads without a website found.' : 'No leads yet. Run a search to get started.';
-    tbody.innerHTML = `<tr><td colspan="11"><div class="empty-state"><div class="icon">${isNoWebsite ? '🚫' : '🔍'}</div>${msg}</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="icon">${isNoWebsite ? '🚫' : '🔍'}</div>${msg}</div></td></tr>`;
     return;
   }
 
-  tbody.innerHTML = leads.map(l => `
-    <tr class="lead-row" onclick="openLeadPanel(${l.id})" style="${l.email_grade === 'invalid' ? 'opacity:0.5' : ''}">
-      <td>
+  tbody.innerHTML = leads.map(l => {
+    const contact = l.contacts?.[0] || (l.decision_maker_name ? { name: l.decision_maker_name, title: l.decision_maker_title } : null);
+    const isActive = _panelLeadId === l.id;
+    return `
+    <tr class="lead-row${isActive ? ' active-row' : ''}" onclick="openLeadPanel(${l.id})" style="${l.email_grade === 'invalid' ? 'opacity:0.5' : ''}">
+      <td class="lead-name-cell">
         <strong>${esc(l.business_name)}</strong>
-        ${l.maps_url ? `<br><a href="${esc(l.maps_url)}" target="_blank" style="color:var(--accent);font-size:11px" onclick="event.stopPropagation()">Maps</a>` : ''}
+        <small>${l.website ? `<a href="${esc(l.website)}" target="_blank" style="color:var(--accent)" onclick="event.stopPropagation()">${esc(l.domain || l.website)}</a>` : `<span style="color:var(--warn)">No website</span>`}</small>
       </td>
-      <td>${l.website ? `<a href="${esc(l.website)}" target="_blank" style="color:var(--accent)">${esc(l.domain || l.website)}</a>` : '<span style="color:var(--warn)">No website</span>'}</td>
-      <td><small style="color:var(--text2)">${esc(l.address || '—')}</small></td>
-      <td>${l.phone ? `<a href="tel:${esc(l.phone)}" style="color:var(--text);font-size:12px">${esc(l.phone)}</a>` : '—'}</td>
-      <td>${l.rating ? `⭐ ${l.rating} <small style="color:var(--text2)">(${l.review_count || 0})</small>` : '—'}</td>
-      <td><small style="color:var(--text2)">${esc(l.category || '—')}</small></td>
-      <td>${renderContacts(l)}</td>
-      <td>${l.decision_maker_email
-        ? `<small>${esc(l.decision_maker_email)}</small><br>${sourceBadge(l.email_source)}`
-        : badge(l.email_status)}</td>
-      <td>${gradeBadge(l.email_grade, l.email_valid_reason)}</td>
+      <td class="lead-contact-cell">
+        ${contact
+          ? `<div style="font-weight:500">${esc(contact.name)}</div><div style="color:var(--text2);font-size:11px">${esc(contact.title || '')}</div>`
+          : `<span style="color:var(--text2)">—</span>`}
+      </td>
+      <td class="lead-email-cell">
+        ${l.decision_maker_email
+          ? `<div class="email-addr">${esc(l.decision_maker_email)}</div><div style="margin-top:2px">${gradeBadge(l.email_grade, l.email_valid_reason)}</div>`
+          : badge(l.email_status)}
+      </td>
       <td>${badge(l.status)}</td>
-      <td onclick="event.stopPropagation()">
-        ${!l.decision_maker_name ? `<button class="btn btn-sm btn-ghost" onclick="findPerson(${l.id})" title="Find decision-maker">👤</button> ` : ''}
-        ${!l.decision_maker_email && l.domain ? `<button class="btn btn-sm btn-primary" onclick="findEmail(${l.id})">Find Email</button> ` : ''}
-        ${l.decision_maker_email && !l.email_grade ? `<button class="btn btn-sm btn-warn" onclick="validateEmail(${l.id})">Validate</button> ` : ''}
-        <button class="btn btn-sm btn-danger" onclick="deleteLead(${l.id})">✕</button>
+      <td onclick="event.stopPropagation()" style="text-align:right">
+        <button class="btn btn-sm btn-danger" onclick="deleteLead(${l.id})" title="Delete lead">✕</button>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 async function findPerson(leadId) {
@@ -508,14 +508,27 @@ async function findEmail(leadId) {
 }
 
 async function deleteLead(leadId) {
-  if (!confirm('Delete this lead?')) return;
-  try {
-    await api('DELETE', `/api/leads/${leadId}`);
-    toast('Lead deleted', 'success');
-    await loadLeads();
-  } catch (e) {
-    toast('Error: ' + e.message, 'error');
+  // Inline confirmation via toast instead of blocking confirm()
+  const id = 'del-' + leadId;
+  const existing = document.getElementById(id);
+  if (existing) {
+    existing.remove();
+    try {
+      await api('DELETE', `/api/leads/${leadId}`);
+      if (_panelLeadId === leadId) closeLeadPanel();
+      toast('Lead deleted', 'success');
+      await loadLeads();
+    } catch (e) {
+      toast('Error: ' + e.message, 'error');
+    }
+    return;
   }
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = 'toast toast-error';
+  el.innerHTML = `Delete this lead? <button onclick="deleteLead(${leadId})" style="margin-left:10px;background:none;border:none;color:inherit;font-weight:700;cursor:pointer;text-decoration:underline">Confirm</button>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 5000);
 }
 
 async function editLead(leadId) {
@@ -1040,22 +1053,35 @@ function _pollUntilStable(refreshFn, timeoutMs = 180000) {
 
 // ── Lead Detail Panel ──────────────────────────────────────────────────
 let _panelLeadId = null;
+let _panelLead = null;
+
+// Close on Escape key
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && _panelLeadId) closeLeadPanel(); });
 
 async function openLeadPanel(leadId) {
+  const alreadyOpen = _panelLeadId === leadId;
   _panelLeadId = leadId;
-  const overlay = document.getElementById('lead-panel-overlay');
-  const panel = document.getElementById('lead-panel');
-  overlay.classList.add('open');
-  panel.classList.add('open');
 
-  // Reset to loading state
-  document.getElementById('lp-title').textContent = 'Loading...';
-  document.getElementById('lp-sub').textContent = '';
-  document.getElementById('lp-contacts').innerHTML = '<span style="color:var(--text2);font-size:13px">Loading...</span>';
-  document.getElementById('lp-email-logs').innerHTML = '<span style="color:var(--text2);font-size:13px">Loading...</span>';
+  document.getElementById('lead-panel-overlay').classList.add('open');
+  document.getElementById('lead-panel').classList.add('open');
+
+  // Highlight the active row
+  document.querySelectorAll('tr.lead-row').forEach(r => r.classList.remove('active-row'));
+  document.querySelectorAll('tr.lead-row').forEach(r => {
+    if (r.getAttribute('onclick')?.includes(`(${leadId})`)) r.classList.add('active-row');
+  });
+
+  if (!alreadyOpen) {
+    document.getElementById('lp-title').textContent = 'Loading...';
+    document.getElementById('lp-sub').textContent = '';
+    document.getElementById('lp-contacts').innerHTML = '<span class="lp-empty">Loading...</span>';
+    document.getElementById('lp-email-display').innerHTML = '<span class="lp-empty">Loading...</span>';
+    document.getElementById('lp-email-logs').innerHTML = '<span class="lp-empty">Loading...</span>';
+  }
 
   try {
     const lead = await api('GET', `/api/leads/${leadId}`);
+    _panelLead = lead;
     populateLeadPanel(lead);
   } catch (e) {
     document.getElementById('lp-title').textContent = 'Error loading lead';
@@ -1065,146 +1091,260 @@ async function openLeadPanel(leadId) {
 function closeLeadPanel() {
   document.getElementById('lead-panel-overlay').classList.remove('open');
   document.getElementById('lead-panel').classList.remove('open');
+  document.querySelectorAll('tr.lead-row.active-row').forEach(r => r.classList.remove('active-row'));
   _panelLeadId = null;
+  _panelLead = null;
 }
 
 function populateLeadPanel(lead) {
   // Header
   document.getElementById('lp-title').textContent = lead.business_name;
-  document.getElementById('lp-sub').textContent = lead.address || '—';
+  document.getElementById('lp-sub').textContent = [lead.category, lead.address].filter(Boolean).join(' · ') || '—';
+  document.getElementById('lp-status').value = lead.status || 'new';
 
   // Business info
   document.getElementById('lp-phone').innerHTML = lead.phone
     ? `<a href="tel:${esc(lead.phone)}" style="color:var(--accent)">${esc(lead.phone)}</a>` : '—';
   document.getElementById('lp-rating').textContent = lead.rating
-    ? `⭐ ${lead.rating} (${lead.review_count || 0} reviews)` : '—';
+    ? `⭐ ${lead.rating} (${lead.review_count || 0})` : '—';
   document.getElementById('lp-category').textContent = lead.category || '—';
   document.getElementById('lp-website').innerHTML = lead.website
-    ? `<a href="${esc(lead.website)}" target="_blank" style="color:var(--accent)">${esc(lead.domain || lead.website)}</a>` : 'No website';
+    ? `<a href="${esc(lead.website)}" target="_blank" style="color:var(--accent)">${esc(lead.domain || lead.website)}</a>` : '—';
   document.getElementById('lp-address').textContent = lead.address || '—';
 
   // Maps link
   const mapsLink = document.getElementById('lp-maps-link');
-  if (lead.maps_url) { mapsLink.href = lead.maps_url; mapsLink.style.display = ''; }
-  else mapsLink.style.display = 'none';
+  if (lead.maps_url) { mapsLink.href = lead.maps_url; }
+  else { mapsLink.style.pointerEvents = 'none'; mapsLink.style.opacity = '0.4'; }
 
   // Contacts
+  const contacts = lead.contacts?.length ? lead.contacts
+    : lead.decision_maker_name ? [{ name: lead.decision_maker_name, title: lead.decision_maker_title }] : [];
   const contactsEl = document.getElementById('lp-contacts');
-  const contacts = lead.contacts && lead.contacts.length ? lead.contacts : [];
-  if (contacts.length) {
-    contactsEl.innerHTML = contacts.map(c => `
-      <div class="contact-card">
-        <div class="contact-card-left">
-          <div class="contact-card-name">${esc(c.name)}</div>
-          <div class="contact-card-title">${esc(c.title || '—')}</div>
-          ${c.email ? `<div style="font-size:11px;color:var(--accent);margin-top:2px">${esc(c.email)}</div>` : ''}
-        </div>
-        <div>${sourceBadge(c.source)}</div>
+  contactsEl.innerHTML = contacts.length ? contacts.map(c => `
+    <div class="contact-card">
+      <div class="contact-card-left">
+        <div class="contact-card-name">${esc(c.name)}</div>
+        ${c.title ? `<div class="contact-card-title">${esc(c.title)}</div>` : ''}
+        ${c.email ? `<div style="font-size:11px;color:var(--accent2);margin-top:2px">${esc(c.email)}</div>` : ''}
       </div>
-    `).join('');
-  } else if (lead.decision_maker_name) {
-    contactsEl.innerHTML = `
-      <div class="contact-card">
-        <div class="contact-card-left">
-          <div class="contact-card-name">${esc(lead.decision_maker_name)}</div>
-          <div class="contact-card-title">${esc(lead.decision_maker_title || '—')}</div>
-        </div>
-      </div>`;
-  } else {
-    contactsEl.innerHTML = `<span style="color:var(--text2);font-size:13px">No contacts found yet</span>`;
-  }
+      <div>${c.source ? sourceBadge(c.source) : ''}</div>
+    </div>`).join('')
+    : '<span class="lp-empty">None found yet — click Find Person above</span>';
+
+  // Update person button label
+  document.getElementById('lp-btn-person-label').textContent = contacts.length ? 'Re-search' : 'Find Person';
 
   // Email
-  document.getElementById('lp-email').innerHTML = lead.decision_maker_email
-    ? `<strong style="color:var(--accent2)">${esc(lead.decision_maker_email)}</strong>` : '—';
-  document.getElementById('lp-email-source').innerHTML = lead.email_source ? sourceBadge(lead.email_source) : '—';
-  document.getElementById('lp-email-grade').innerHTML = gradeBadge(lead.email_grade, lead.email_valid_reason);
+  const emailEl = document.getElementById('lp-email-display');
+  if (lead.decision_maker_email) {
+    emailEl.innerHTML = `
+      <div class="lp-email-found">
+        <div>
+          <div class="lp-email-address">${esc(lead.decision_maker_email)}</div>
+          <div class="lp-email-meta">
+            ${lead.email_source ? sourceBadge(lead.email_source) : ''}
+            ${gradeBadge(lead.email_grade, lead.email_valid_reason)}
+          </div>
+        </div>
+        <button class="btn btn-sm btn-ghost" onclick="navigator.clipboard.writeText('${esc(lead.decision_maker_email)}').then(()=>toast('Copied','success'))">Copy</button>
+      </div>`;
+    // Show compose section when email is known
+    document.getElementById('lp-compose-section').style.display = '';
+    document.getElementById('lp-btn-validate-label').textContent = lead.email_grade ? 'Re-validate' : 'Validate';
+  } else {
+    emailEl.innerHTML = `<span class="lp-empty">No email found yet — click Find Email above</span>`;
+    document.getElementById('lp-compose-section').style.display = 'none';
+    document.getElementById('lp-btn-validate-label').textContent = 'Validate';
+  }
 
-  // Status & notes
-  document.getElementById('lp-status').value = lead.status || 'new';
+  // Show/hide email & validate buttons
+  document.getElementById('lp-btn-email').style.opacity = lead.domain ? '1' : '0.4';
+  document.getElementById('lp-btn-email').disabled = !lead.domain;
+  document.getElementById('lp-btn-validate').style.opacity = lead.decision_maker_email ? '1' : '0.4';
+  document.getElementById('lp-btn-validate').disabled = !lead.decision_maker_email;
+
+  // Notes
   document.getElementById('lp-notes').value = lead.notes || '';
 
   // Email history
   const logsEl = document.getElementById('lp-email-logs');
   const logs = lead.email_logs || [];
-  if (logs.length) {
-    logsEl.innerHTML = logs.map(log => `
-      <div class="email-log-item">
-        <div class="email-log-subject">${esc(log.subject || '(no subject)')}</div>
-        <div class="email-log-meta">
-          To: ${esc(log.to_email)} &nbsp;·&nbsp;
-          ${badge(log.status)} &nbsp;·&nbsp;
-          ${log.sent_at ? new Date(log.sent_at).toLocaleString() : log.created_at ? new Date(log.created_at).toLocaleString() : '—'}
-        </div>
-        ${log.error_message ? `<div style="font-size:11px;color:var(--danger);margin-top:4px">${esc(log.error_message)}</div>` : ''}
+  logsEl.innerHTML = logs.length ? logs.map(log => `
+    <div class="email-log-item">
+      <div class="email-log-subject">${esc(log.subject || '(no subject)')}</div>
+      <div class="email-log-meta">
+        ${esc(log.to_email)} &nbsp;·&nbsp; ${badge(log.status)} &nbsp;·&nbsp;
+        ${log.sent_at ? new Date(log.sent_at).toLocaleString() : '—'}
       </div>
-    `).join('');
-  } else {
-    logsEl.innerHTML = `<span style="color:var(--text2);font-size:13px">No emails sent yet</span>`;
-  }
-
-  // Footer buttons
-  document.getElementById('lp-btn-person').textContent = contacts.length ? '👤 Re-search' : '👤 Find Person';
-  document.getElementById('lp-btn-email').style.display = lead.domain ? '' : 'none';
-  document.getElementById('lp-btn-validate').style.display = lead.decision_maker_email ? '' : 'none';
+      ${log.error_message ? `<div style="font-size:11px;color:var(--danger);margin-top:2px">${esc(log.error_message)}</div>` : ''}
+    </div>`).join('')
+    : '<span class="lp-empty">No emails sent yet</span>';
 }
 
-async function updateLeadStatus() {
+async function updateLeadStatus(sel) {
   if (!_panelLeadId) return;
-  const status = document.getElementById('lp-status').value;
-  await api('PATCH', `/api/leads/${_panelLeadId}`, { status });
-  await loadLeads();
+  try {
+    await api('PATCH', `/api/leads/${_panelLeadId}`, { status: sel.value });
+    // Update row badge in table without full reload
+    const row = document.querySelector(`tr.lead-row.active-row td:nth-child(4)`);
+    if (row) row.innerHTML = badge(sel.value);
+    toast('Status updated', 'success');
+  } catch (e) {
+    toast('Failed to update status', 'error');
+  }
 }
 
 async function saveLeadNotes() {
   if (!_panelLeadId) return;
-  const notes = document.getElementById('lp-notes').value;
-  await api('PATCH', `/api/leads/${_panelLeadId}`, { notes });
+  const btn = event?.target;
+  if (btn) { btn.textContent = 'Saving...'; btn.disabled = true; }
+  try {
+    await api('PATCH', `/api/leads/${_panelLeadId}`, { notes: document.getElementById('lp-notes').value });
+    toast('Notes saved', 'success');
+  } catch (e) {
+    toast('Failed to save notes', 'error');
+  } finally {
+    if (btn) { btn.textContent = 'Save Notes'; btn.disabled = false; }
+  }
+}
+
+function _setPanelBtnLoading(btnId, labelId, loadingText) {
+  const btn = document.getElementById(btnId);
+  const label = document.getElementById(labelId);
+  if (btn) btn.disabled = true;
+  if (label) label.textContent = loadingText;
+}
+
+function _resetPanelBtn(btnId, labelId, defaultText) {
+  const btn = document.getElementById(btnId);
+  const label = document.getElementById(labelId);
+  if (btn) btn.disabled = false;
+  if (label) label.textContent = defaultText;
 }
 
 async function findPersonFromPanel() {
   if (!_panelLeadId) return;
-  document.getElementById('lp-btn-person').textContent = '⏳ Searching...';
+  _setPanelBtnLoading('lp-btn-person', 'lp-btn-person-label', 'Searching...');
   try {
     const res = await api('POST', `/api/leads/${_panelLeadId}/find-person`);
     if (res.status === 'found') {
       const n = res.lead.contacts?.length || 1;
       toast(`Found ${n} contact${n > 1 ? 's' : ''} via ${res.source}`, 'success');
-      populateLeadPanel(await api('GET', `/api/leads/${_panelLeadId}`));
+      const lead = await api('GET', `/api/leads/${_panelLeadId}`);
+      populateLeadPanel(lead);
+      _refreshTableRow(lead);
     } else {
       toast('No decision-maker found', 'error');
-      document.getElementById('lp-btn-person').textContent = '👤 Find Person';
+      _resetPanelBtn('lp-btn-person', 'lp-btn-person-label', 'Find Person');
     }
-    await loadLeads();
   } catch (e) {
-    document.getElementById('lp-btn-person').textContent = '👤 Find Person';
+    toast('Error: ' + e.message, 'error');
+    _resetPanelBtn('lp-btn-person', 'lp-btn-person-label', 'Find Person');
   }
 }
 
 async function findEmailFromPanel() {
   if (!_panelLeadId) return;
-  document.getElementById('lp-btn-email').textContent = '⏳ Searching...';
+  _setPanelBtnLoading('lp-btn-email', 'lp-btn-email-label', 'Searching...');
   try {
     const res = await api('POST', `/api/leads/${_panelLeadId}/find-email`);
-    toast(res.status === 'found' ? `Found: ${res.lead.decision_maker_email}` : 'No email found', res.status === 'found' ? 'success' : 'error');
-    populateLeadPanel(await api('GET', `/api/leads/${_panelLeadId}`));
-    await loadLeads();
+    if (res.status === 'found') {
+      toast(`Email found: ${res.lead.decision_maker_email}`, 'success');
+    } else {
+      toast('No email found', 'error');
+    }
+    const lead = await api('GET', `/api/leads/${_panelLeadId}`);
+    populateLeadPanel(lead);
+    _refreshTableRow(lead);
   } catch (e) {
-    document.getElementById('lp-btn-email').textContent = '🔍 Find Email';
+    toast('Error: ' + e.message, 'error');
+    _resetPanelBtn('lp-btn-email', 'lp-btn-email-label', 'Find Email');
   }
 }
 
 async function validateEmailFromPanel() {
   if (!_panelLeadId) return;
-  document.getElementById('lp-btn-validate').textContent = '⏳ Validating...';
+  _setPanelBtnLoading('lp-btn-validate', 'lp-btn-validate-label', 'Checking...');
   try {
     const res = await api('POST', `/api/leads/${_panelLeadId}/validate-email`);
-    toast(`Grade: ${res.grade} — ${res.reason || ''}`, res.grade === 'valid' ? 'success' : 'error');
-    populateLeadPanel(await api('GET', `/api/leads/${_panelLeadId}`));
-    await loadLeads();
+    const icons = { valid: '✓', risky: '⚠', invalid: '✕' };
+    toast(`${icons[res.grade] || ''} ${res.grade} — ${(res.reason || '').replace(/_/g, ' ')}`, res.grade === 'valid' ? 'success' : 'error');
+    const lead = await api('GET', `/api/leads/${_panelLeadId}`);
+    populateLeadPanel(lead);
+    _refreshTableRow(lead);
   } catch (e) {
-    document.getElementById('lp-btn-validate').textContent = '✓ Validate';
+    toast('Error: ' + e.message, 'error');
+    _resetPanelBtn('lp-btn-validate', 'lp-btn-validate-label', 'Validate');
   }
+}
+
+function toggleCompose() {
+  const form = document.getElementById('lp-compose-form');
+  const toggle = document.getElementById('lp-compose-toggle');
+  const isOpen = form.style.display !== 'none';
+  form.style.display = isOpen ? 'none' : '';
+  toggle.textContent = isOpen ? 'Compose' : 'Cancel';
+  if (!isOpen && _panelLead) {
+    // Pre-fill subject with business name
+    const subj = document.getElementById('lp-compose-subject');
+    if (!subj.value) subj.value = `Quick question about ${_panelLead.business_name}`;
+    document.getElementById('lp-compose-body').focus();
+  }
+}
+
+async function sendEmailFromPanel() {
+  if (!_panelLeadId || !_panelLead) return;
+  const subject = document.getElementById('lp-compose-subject').value.trim();
+  const body = document.getElementById('lp-compose-body').value.trim();
+  const email = _panelLead.decision_maker_email;
+
+  if (!subject || !body) { toast('Subject and body are required', 'error'); return; }
+  if (!email) { toast('No email address found for this lead', 'error'); return; }
+
+  const btn = document.getElementById('lp-send-btn');
+  btn.disabled = true; btn.textContent = 'Sending...';
+
+  try {
+    await api('POST', '/api/outreach/send-single', {
+      lead_id: _panelLeadId,
+      to_email: email,
+      subject,
+      body,
+    });
+    toast('Email sent!', 'success');
+    // Close compose, refresh logs
+    toggleCompose();
+    document.getElementById('lp-compose-subject').value = '';
+    document.getElementById('lp-compose-body').value = '';
+    const lead = await api('GET', `/api/leads/${_panelLeadId}`);
+    _panelLead = lead;
+    populateLeadPanel(lead);
+    // Auto-update status to contacted
+    if (lead.status === 'new') {
+      await api('PATCH', `/api/leads/${_panelLeadId}`, { status: 'contacted' });
+      document.getElementById('lp-status').value = 'contacted';
+    }
+  } catch (e) {
+    toast('Failed to send: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Send Email';
+  }
+}
+
+// Refresh a single table row without reloading all leads
+function _refreshTableRow(lead) {
+  const contact = lead.contacts?.[0] || (lead.decision_maker_name ? { name: lead.decision_maker_name, title: lead.decision_maker_title } : null);
+  const row = document.querySelector('tr.lead-row.active-row');
+  if (!row) return;
+  const cells = row.querySelectorAll('td');
+  if (cells[1]) cells[1].innerHTML = contact
+    ? `<div style="font-weight:500">${esc(contact.name)}</div><div style="color:var(--text2);font-size:11px">${esc(contact.title || '')}</div>`
+    : '<span style="color:var(--text2)">—</span>';
+  if (cells[2]) cells[2].innerHTML = lead.decision_maker_email
+    ? `<div class="email-addr">${esc(lead.decision_maker_email)}</div><div style="margin-top:2px">${gradeBadge(lead.email_grade, lead.email_valid_reason)}</div>`
+    : badge(lead.email_status);
+  if (cells[3]) cells[3].innerHTML = badge(lead.status);
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────

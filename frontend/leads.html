@@ -24,22 +24,21 @@
       <div class="page-title">All Leads</div>
       <div class="page-sub" id="leads-count">Loading...</div>
     </div>
-    <div style="display:flex;gap:10px;">
-      <button class="btn btn-ghost" onclick="bulkFindPersons()">👤 Find All Persons</button>
-      <button class="btn btn-ghost" onclick="bulkFindEmails()">🔍 Bulk Find Emails</button>
-      <button class="btn btn-warn" onclick="bulkValidateEmails()">✓ Validate All Emails</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" onclick="bulkFindPersons()">Find All Persons</button>
+      <button class="btn btn-ghost" onclick="bulkFindEmails()">Bulk Find Emails</button>
+      <button class="btn btn-ghost" onclick="bulkValidateEmails()">Validate All</button>
     </div>
   </div>
 
-  <!-- Tabs -->
   <div class="leads-tabs">
     <button class="leads-tab active" data-tab="all" onclick="switchTab('all', this)">All Leads</button>
-    <button class="leads-tab" data-tab="with-website" onclick="switchTab('with-website', this)">🌐 Has Website</button>
-    <button class="leads-tab" data-tab="no-website" onclick="switchTab('no-website', this)">🚫 No Website</button>
+    <button class="leads-tab" data-tab="with-website" onclick="switchTab('with-website', this)">Has Website</button>
+    <button class="leads-tab" data-tab="no-website" onclick="switchTab('no-website', this)">No Website</button>
   </div>
 
   <div class="search-bar">
-    <input id="search-input" class="form-control" placeholder="Search by name, address, email...">
+    <input id="search-input" class="form-control" placeholder="Search name, address, email...">
     <select id="filter-status" class="form-control">
       <option value="">All statuses</option>
       <option value="new">New</option>
@@ -51,14 +50,14 @@
     <select id="filter-email-status" class="form-control">
       <option value="">All email statuses</option>
       <option value="found">Email Found</option>
-      <option value="not_found">Email Not Found</option>
+      <option value="not_found">No Email</option>
       <option value="not_searched">Not Searched</option>
     </select>
     <select id="filter-grade" class="form-control">
       <option value="">All grades</option>
-      <option value="valid">✓ Valid</option>
-      <option value="risky">⚠ Risky</option>
-      <option value="invalid">✕ Invalid</option>
+      <option value="valid">Valid</option>
+      <option value="risky">Risky</option>
+      <option value="invalid">Invalid</option>
     </select>
     <button class="btn btn-ghost" onclick="loadLeads()">Refresh</button>
   </div>
@@ -67,22 +66,16 @@
     <div class="table-wrapper">
       <table>
         <thead>
-          <tr id="leads-thead">
+          <tr>
             <th>Business</th>
-            <th>Domain</th>
-            <th>Address</th>
-            <th>Phone</th>
-            <th>Rating</th>
-            <th>Category</th>
-            <th>Decision Maker</th>
+            <th>Contact</th>
             <th>Email</th>
-            <th>Grade</th>
             <th>Status</th>
-            <th>Actions</th>
+            <th style="width:80px"></th>
           </tr>
         </thead>
         <tbody id="leads-tbody">
-          <tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text2)">Loading...</td></tr>
+          <tr><td colspan="5" style="text-align:center;padding:40px;color:var(--text2)">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -92,15 +85,59 @@
 <!-- Lead Detail Panel -->
 <div class="lead-panel-overlay" id="lead-panel-overlay" onclick="closeLeadPanel()"></div>
 <div class="lead-panel" id="lead-panel">
+
   <div class="lead-panel-header">
-    <div>
+    <div style="flex:1;min-width:0">
       <div class="lead-panel-title" id="lp-title">—</div>
       <div class="lead-panel-sub" id="lp-sub">—</div>
     </div>
-    <button class="lead-panel-close" onclick="closeLeadPanel()">✕</button>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <select class="status-select" id="lp-status" onchange="updateLeadStatus(this)">
+        <option value="new">New</option>
+        <option value="contacted">Contacted</option>
+        <option value="replied">Replied</option>
+        <option value="converted">Converted</option>
+        <option value="unsubscribed">Unsubscribed</option>
+      </select>
+      <button class="lead-panel-close" onclick="closeLeadPanel()">✕</button>
+    </div>
   </div>
 
   <div class="lead-panel-body">
+
+    <!-- Quick actions row -->
+    <div class="lp-actions">
+      <button class="lp-action-btn" id="lp-btn-person" onclick="findPersonFromPanel()">
+        <span class="lp-action-icon">👤</span>
+        <span id="lp-btn-person-label">Find Person</span>
+      </button>
+      <button class="lp-action-btn" id="lp-btn-email" onclick="findEmailFromPanel()">
+        <span class="lp-action-icon">🔍</span>
+        <span id="lp-btn-email-label">Find Email</span>
+      </button>
+      <button class="lp-action-btn" id="lp-btn-validate" onclick="validateEmailFromPanel()">
+        <span class="lp-action-icon">✓</span>
+        <span id="lp-btn-validate-label">Validate</span>
+      </button>
+      <a id="lp-maps-link" href="#" target="_blank" class="lp-action-btn" style="text-decoration:none">
+        <span class="lp-action-icon">🗺</span>
+        <span>Maps</span>
+      </a>
+    </div>
+
+    <!-- Decision Makers -->
+    <div class="lead-panel-section">
+      <div class="lead-panel-section-title">Decision Makers</div>
+      <div id="lp-contacts"><span class="lp-empty">None found yet</span></div>
+    </div>
+
+    <!-- Email -->
+    <div class="lead-panel-section" id="lp-email-section">
+      <div class="lead-panel-section-title">Email</div>
+      <div id="lp-email-display">
+        <span class="lp-empty">No email found yet</span>
+      </div>
+    </div>
 
     <!-- Business Info -->
     <div class="lead-panel-section">
@@ -129,57 +166,37 @@
       </div>
     </div>
 
-    <!-- Contacts -->
-    <div class="lead-panel-section">
-      <div class="lead-panel-section-title">Decision Makers</div>
-      <div id="lp-contacts">—</div>
-    </div>
-
-    <!-- Email -->
-    <div class="lead-panel-section">
-      <div class="lead-panel-section-title">Email</div>
-      <div class="lead-info-grid">
-        <div class="lead-info-item" style="grid-column:1/-1">
-          <span class="lead-info-label">Address</span>
-          <span class="lead-info-value" id="lp-email">—</span>
+    <!-- Compose Email -->
+    <div class="lead-panel-section" id="lp-compose-section" style="display:none">
+      <div class="lead-panel-section-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Send Email</span>
+        <button class="btn btn-sm btn-ghost" onclick="toggleCompose()" id="lp-compose-toggle">Compose</button>
+      </div>
+      <div id="lp-compose-form" style="display:none">
+        <div style="margin-bottom:8px">
+          <input id="lp-compose-subject" class="form-control" placeholder="Subject" style="margin-bottom:6px">
+          <textarea id="lp-compose-body" class="panel-notes" rows="5" placeholder="Write your email..."></textarea>
         </div>
-        <div class="lead-info-item">
-          <span class="lead-info-label">Source</span>
-          <span class="lead-info-value" id="lp-email-source">—</span>
-        </div>
-        <div class="lead-info-item">
-          <span class="lead-info-label">Grade</span>
-          <span class="lead-info-value" id="lp-email-grade">—</span>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-ghost btn-sm" onclick="toggleCompose()">Cancel</button>
+          <button class="btn btn-primary btn-sm" id="lp-send-btn" onclick="sendEmailFromPanel()">Send Email</button>
         </div>
       </div>
     </div>
 
-    <!-- Status & Notes -->
+    <!-- Notes -->
     <div class="lead-panel-section">
-      <div class="lead-panel-section-title">Status & Notes</div>
-      <select class="status-select" id="lp-status" onchange="updateLeadStatus()">
-        <option value="new">New</option>
-        <option value="contacted">Contacted</option>
-        <option value="replied">Replied</option>
-        <option value="converted">Converted</option>
-        <option value="unsubscribed">Unsubscribed</option>
-      </select>
-      <textarea class="panel-notes" id="lp-notes" placeholder="Add notes..." onblur="saveLeadNotes()"></textarea>
+      <div class="lead-panel-section-title">Notes</div>
+      <textarea class="panel-notes" id="lp-notes" placeholder="Add notes about this lead..."></textarea>
+      <button class="btn btn-sm btn-ghost" style="margin-top:6px;align-self:flex-start" onclick="saveLeadNotes()">Save Notes</button>
     </div>
 
     <!-- Email History -->
     <div class="lead-panel-section">
       <div class="lead-panel-section-title">Email History</div>
-      <div id="lp-email-logs">—</div>
+      <div id="lp-email-logs"><span class="lp-empty">No emails sent yet</span></div>
     </div>
 
-  </div>
-
-  <div class="lead-panel-footer">
-    <button class="btn btn-ghost" id="lp-btn-person" onclick="findPersonFromPanel()">👤 Find Person</button>
-    <button class="btn btn-primary" id="lp-btn-email" onclick="findEmailFromPanel()">🔍 Find Email</button>
-    <button class="btn btn-warn" id="lp-btn-validate" onclick="validateEmailFromPanel()">✓ Validate</button>
-    <a id="lp-maps-link" href="#" target="_blank" class="btn btn-ghost" style="text-decoration:none">🗺 Maps</a>
   </div>
 </div>
 

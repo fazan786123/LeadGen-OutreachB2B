@@ -21,9 +21,50 @@ class SendRequest(BaseModel):
     filter_status: Optional[str] = "new"  # only send to leads with this status
 
 
+class SendSingleRequest(BaseModel):
+    lead_id: int
+    to_email: str
+    subject: str
+    body: str
+
+
 class PreviewRequest(BaseModel):
     campaign_id: int
     lead_id: int
+
+
+@router.post("/send-single")
+async def send_single_email(req: SendSingleRequest, db: Session = Depends(get_db)):
+    """Send a one-off email directly from the lead panel."""
+    lead = db.query(Lead).filter(Lead.id == req.lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    # Check daily cap
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    sent_today = db.query(EmailLog).filter(
+        EmailLog.status == "sent",
+        EmailLog.sent_at >= today_start,
+    ).count()
+    if sent_today >= settings.max_emails_per_day:
+        raise HTTPException(status_code=429, detail=f"Daily send limit ({settings.max_emails_per_day}) reached")
+
+    result = await send_email(req.to_email, req.subject, req.body)
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("error", "Failed to send email"))
+
+    log = EmailLog(
+        lead_id=req.lead_id,
+        campaign_id=None,
+        to_email=req.to_email,
+        subject=req.subject,
+        body_preview=req.body[:500],
+        status="sent",
+        sent_at=datetime.utcnow(),
+    )
+    db.add(log)
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/preview")
