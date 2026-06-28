@@ -5,13 +5,15 @@ Used as the last resort when team page scraper + Brave Search both return nothin
 Costs $0.005–$2.4 per request depending on research depth.
 We use a tight prompt to keep it on the cheap end (~$0.005–$0.05).
 
-Docs: https://docs.parallel.ai
+API reference: https://docs.parallel.ai
+SDK: pip install parallel-web
 """
 
 import asyncio
 import httpx
 
-PARALLEL_TASK_URL = "https://api.parallel.ai/v1/tasks"
+PARALLEL_BASE_URL = "https://api.parallel.ai/v1"
+PARALLEL_RUNS_URL = f"{PARALLEL_BASE_URL}/tasks/runs"
 
 # Output schema we ask Parallel to fill
 _OUTPUT_SCHEMA = {
@@ -64,39 +66,57 @@ async def parallel_find_people(
         "Content-Type": "application/json",
     }
     payload = {
-        "prompt": prompt,
+        "input": prompt,
+        "processor": "base",
         "output_schema": _OUTPUT_SCHEMA,
     }
 
     try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            # Submit task
-            resp = await client.post(PARALLEL_TASK_URL, json=payload, headers=headers)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(PARALLEL_RUNS_URL, json=payload, headers=headers)
             resp.raise_for_status()
             task = resp.json()
 
-        task_id = task.get("id")
-        if not task_id:
+        run_id = task.get("run_id")
+        if not run_id:
             return []
 
-        # Poll for completion (Task API is async, 5s–30min)
-        poll_url = f"{PARALLEL_TASK_URL}/{task_id}"
+        # Poll for completion — status cycles through queued → running → completed/failed
+        status_url = f"{PARALLEL_RUNS_URL}/{run_id}"
+        result_url = f"{PARALLEL_RUNS_URL}/{run_id}/result"
+
         for _ in range(24):  # max ~2 minutes polling
             await asyncio.sleep(5)
             async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(poll_url, headers=headers)
+                resp = await client.get(status_url, headers=headers)
                 resp.raise_for_status()
-                result = resp.json()
+                run = resp.json()
 
-            status = result.get("status")
+            status = run.get("status")
             if status == "completed":
-                contacts = result.get("output", {}).get("contacts", [])
+                # Fetch structured result
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.get(result_url, headers=headers)
+                    resp.raise_for_status()
+                    result = resp.json()
+
+                # output is TaskRunJsonOutput when output_schema is provided
+                output = result.get("output", {})
+                # SDK returns {"type": "json", "value": {...}} or just the dict
+                if isinstance(output, dict) and "value" in output:
+                    output = output["value"]
+
+                contacts = output.get("contacts", [])
                 return [
                     {"name": c["name"], "title": c.get("title", ""), "source": "parallel"}
                     for c in contacts
                     if c.get("name")
                 ]
-            if status in ("failed", "cancelled"):
+
+            if status in ("failed", "cancelled", "cancelling"):
+                return []
+
+            if run.get("is_active") is False and status not in ("queued", "running"):
                 return []
 
     except Exception:
