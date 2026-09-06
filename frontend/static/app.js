@@ -223,9 +223,18 @@ async function runSearch() {
     setPipeProgress(5, 'Searching Google Maps…', `${keyword} in ${location}`, 'Connecting to Maps API…');
     pipeLog(`Starting smart search: "${keyword}" in ${location}${maxResults ? ` (target ${maxResults})` : ' (no limit)'}`, 'info');
 
-    const res = await api('POST', '/api/leads/smart-scrape', {
-      keyword, location, target: maxResults,
-    });
+    const minRating = parseFloat(document.getElementById('pipe-min-rating')?.value) || null;
+    const minReviews = parseInt(document.getElementById('pipe-min-reviews')?.value) || null;
+    const noWebsite = document.getElementById('pipe-no-website')?.checked || false;
+    const requiresPhone = document.getElementById('pipe-requires-phone')?.checked || false;
+
+    const scrapePayload = { keyword, location, target: maxResults };
+    if (minRating) scrapePayload.min_rating = minRating;
+    if (minReviews) scrapePayload.min_reviews = minReviews;
+    if (noWebsite) scrapePayload.no_website_only = true;
+    if (requiresPhone) scrapePayload.requires_phone = true;
+
+    const res = await api('POST', '/api/leads/smart-scrape', scrapePayload);
     pipeLog(`Search job #${res.job_id} started`, 'info');
     const added = await _pollGridJob(res.job_id);
 
@@ -1229,6 +1238,28 @@ function populateLeadPanel(lead) {
     document.getElementById('lp-btn-validate-label').textContent = 'Validate';
   }
 
+  // Preview link
+  const previewSection = document.getElementById('lp-preview-section');
+  const previewDisplay = document.getElementById('lp-preview-display');
+  if (lead.preview_url) {
+    previewSection.style.display = '';
+    previewDisplay.innerHTML = `
+      <div class="lp-email-found" style="justify-content:space-between">
+        <div>
+          <div class="lp-email-address" style="font-size:12px">${esc(window.location.origin + lead.preview_url)}</div>
+          <div class="lp-email-meta" style="font-size:11px;color:var(--text2)">Generated ${lead.preview_generated_at ? new Date(lead.preview_generated_at).toLocaleString() : ''}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <a href="${esc(lead.preview_url)}" target="_blank" class="btn btn-sm btn-ghost">Open</a>
+          <button class="btn btn-sm btn-ghost" onclick="navigator.clipboard.writeText('${esc(window.location.origin + lead.preview_url)}').then(()=>toast('Link copied','success'))">Copy Link</button>
+        </div>
+      </div>`;
+    document.getElementById('lp-btn-preview-label').textContent = 'Regenerate';
+  } else {
+    previewSection.style.display = 'none';
+    document.getElementById('lp-btn-preview-label').textContent = 'Preview Site';
+  }
+
   // Show/hide email & validate buttons
   document.getElementById('lp-btn-email').style.opacity = lead.domain ? '1' : '0.4';
   document.getElementById('lp-btn-email').disabled = !lead.domain;
@@ -1400,6 +1431,32 @@ async function sendEmailFromPanel() {
     toast('Failed to send: ' + e.message, 'error');
   } finally {
     btn.disabled = false; btn.textContent = 'Send Email';
+  }
+}
+
+async function generatePreviewFromPanel() {
+  if (!_panelLeadId) return;
+  const btn = document.getElementById('lp-btn-preview');
+  const label = document.getElementById('lp-btn-preview-label');
+  btn.disabled = true;
+  label.textContent = 'Generating...';
+  try {
+    const res = await api('POST', `/api/leads/${_panelLeadId}/generate-preview`);
+    const url = res.url;
+    label.textContent = 'Preview Site';
+    btn.disabled = false;
+    // Show a toast with a clickable link
+    const t = document.createElement('div');
+    t.className = 'toast toast-success';
+    t.innerHTML = `Preview ready — <a href="${url}" target="_blank" style="color:#fff;text-decoration:underline">open preview</a>`;
+    document.getElementById('toast-container').appendChild(t);
+    setTimeout(() => t.remove(), 8000);
+    // Update panel lead state
+    _panelLead = await api('GET', `/api/leads/${_panelLeadId}`);
+  } catch (e) {
+    toast('Preview failed: ' + e.message, 'error');
+    label.textContent = 'Preview Site';
+    btn.disabled = false;
   }
 }
 

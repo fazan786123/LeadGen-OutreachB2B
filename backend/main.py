@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 
 from database import Base, engine
-from routers import leads, campaigns, outreach, dashboard
+from routers import leads, campaigns, outreach, dashboard, preview
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,6 +22,7 @@ app.include_router(leads.router)
 app.include_router(campaigns.router)
 app.include_router(outreach.router)
 app.include_router(dashboard.router)
+app.include_router(preview.router)
 
 # Serve frontend
 frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")

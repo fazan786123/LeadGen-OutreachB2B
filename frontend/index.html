@@ -68,6 +68,28 @@
       <p style="font-size:12px;color:var(--text2);margin-top:8px">Radius is chosen automatically — expands from 1 km up to a deep 5 km sweep until the target is reached.</p>
     </div>
 
+    <div class="form-group">
+      <label class="form-label">Lead Filters <span style="font-size:11px;color:var(--text2);font-weight:400">(only save leads that match)</span></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div>
+          <label class="form-label" style="font-size:12px">Min Rating</label>
+          <input id="pipe-min-rating" class="form-control" type="number" min="0" max="5" step="0.5" placeholder="e.g. 4.5">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px">Min Reviews</label>
+          <input id="pipe-min-reviews" class="form-control" type="number" min="0" placeholder="e.g. 20">
+        </div>
+      </div>
+      <div style="display:flex;gap:16px">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="pipe-no-website"> No website only
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="pipe-requires-phone"> Must have phone
+        </label>
+      </div>
+    </div>
+
     <div class="pipeline-actions">
       <button class="btn btn-primary btn-lg" id="pipe-search-btn" onclick="runSearch()">
         🗺️ Search Maps

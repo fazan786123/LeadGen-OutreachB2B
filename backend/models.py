@@ -29,6 +29,10 @@ class Lead(Base):
     email_grade = Column(String(20))       # valid | risky | invalid | None (not validated)
     email_valid_reason = Column(String(100))
     email_validated_at = Column(DateTime)
+    # Website preview
+    preview_token = Column(String(64), unique=True, index=True)
+    preview_html = Column(Text)
+    preview_generated_at = Column(DateTime)
     # Lead status
     status = Column(String(50), default="new")  # new | contacted | replied | converted | unsubscribed
     notes = Column(Text)

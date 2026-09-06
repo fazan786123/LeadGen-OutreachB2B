@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     skrapp_api_key: str = ""        # 100 free/month — skrapp.io
     findthat_api_key: str = ""      # 50 free/month  — findthat.email
     parallel_api_key: str = ""      # parallel.ai — deep web research, pay-as-you-go
+    anthropic_api_key: str = ""     # anthropic.com — website preview generation
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
     smtp_user: str = ""

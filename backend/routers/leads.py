@@ -16,6 +16,18 @@ from services.people_finder import find_decision_maker, find_decision_makers
 router = APIRouter(prefix="/api/leads", tags=["leads"])
 settings = get_settings()
 
+
+def _passes_filters(biz: dict, min_rating: float, min_reviews: int, no_website_only: bool, requires_phone: bool) -> bool:
+    if min_rating and (biz.get("rating") or 0) < min_rating:
+        return False
+    if min_reviews and (biz.get("review_count") or 0) < min_reviews:
+        return False
+    if no_website_only and biz.get("website"):
+        return False
+    if requires_phone and not biz.get("phone"):
+        return False
+    return True
+
 # In-memory bulk job tracker
 import uuid
 _bulk_jobs: dict = {}
@@ -41,20 +53,32 @@ class ScrapeRequest(BaseModel):
     keyword: str
     location: str
     max_results: int = 20
+    min_rating: float = 0.0
+    min_reviews: int = 0
+    no_website_only: bool = False
+    requires_phone: bool = False
 
 
 class GridScrapeRequest(BaseModel):
     keyword: str
     location: str
-    square_size: int = 2000  # meters — 2000 covers ~12x12km, 5000 covers ~30x30km
-    mode: str = "grid"       # grid (36 viewports) | deep (324 viewports, 9 centers)
-    max_items: int = 0       # 0 = unlimited, mirrors n8n's max_items param
+    square_size: int = 2000
+    mode: str = "grid"
+    max_items: int = 0
+    min_rating: float = 0.0
+    min_reviews: int = 0
+    no_website_only: bool = False
+    requires_phone: bool = False
 
 
 class SmartScrapeRequest(BaseModel):
     keyword: str
     location: str
-    target: int = 100        # desired number of NEW leads added to the DB
+    target: int = 100
+    min_rating: float = 0.0
+    min_reviews: int = 0
+    no_website_only: bool = False
+    requires_phone: bool = False
 
 
 class LeadUpdate(BaseModel):
@@ -76,8 +100,11 @@ async def scrape_leads(req: ScrapeRequest, background_tasks: BackgroundTasks, db
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Google Maps API error: {e}")
 
-    added, skipped = 0, 0
+    added, skipped, filtered = 0, 0, 0
     for biz in businesses:
+        if not _passes_filters(biz, req.min_rating, req.min_reviews, req.no_website_only, req.requires_phone):
+            filtered += 1
+            continue
         existing = db.query(Lead).filter(Lead.google_place_id == biz["google_place_id"]).first()
         if existing:
             skipped += 1
@@ -87,7 +114,7 @@ async def scrape_leads(req: ScrapeRequest, background_tasks: BackgroundTasks, db
         added += 1
 
     db.commit()
-    return {"added": added, "skipped": skipped, "total_found": len(businesses)}
+    return {"added": added, "skipped": skipped, "filtered": filtered, "total_found": len(businesses)}
 
 
 @router.post("/scrape-grid")
@@ -115,7 +142,8 @@ async def scrape_grid(req: GridScrapeRequest, background_tasks: BackgroundTasks,
     db.commit()
     db.refresh(job)
 
-    background_tasks.add_task(_run_grid_scrape, job.id, req.keyword, req.location, req.square_size, is_deep, req.max_items)
+    filters = (req.min_rating, req.min_reviews, req.no_website_only, req.requires_phone)
+    background_tasks.add_task(_run_grid_scrape, job.id, req.keyword, req.location, req.square_size, is_deep, req.max_items, *filters)
     msg = f"{'Deep Sweep' if is_deep else 'Grid scrape'} started — {viewports_total} viewports queued"
     return {"job_id": job.id, "message": msg, "viewports_total": viewports_total, "mode": mode_label}
 
@@ -138,7 +166,8 @@ async def smart_scrape(req: SmartScrapeRequest, background_tasks: BackgroundTask
     db.commit()
     db.refresh(job)
 
-    background_tasks.add_task(_run_smart_scrape, job.id, req.keyword, req.location, req.target)
+    filters = (req.min_rating, req.min_reviews, req.no_website_only, req.requires_phone)
+    background_tasks.add_task(_run_smart_scrape, job.id, req.keyword, req.location, req.target, *filters)
     return {"job_id": job.id, "message": f"Smart scrape started — target {req.target} leads", "mode": "smart"}
 
 
@@ -189,7 +218,8 @@ def list_scrape_jobs(db: Session = Depends(get_db)):
     ]
 
 
-async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size: int, deep: bool = False, max_items: int = 0):
+async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size: int, deep: bool = False, max_items: int = 0,
+                           min_rating: float = 0.0, min_reviews: int = 0, no_website_only: bool = False, requires_phone: bool = False):
     from database import SessionLocal
     db = SessionLocal()
 
@@ -206,6 +236,8 @@ async def _run_grid_scrape(job_id: int, keyword: str, location: str, square_size
 
         added, skipped = 0, 0
         for biz in businesses:
+            if not _passes_filters(biz, min_rating, min_reviews, no_website_only, requires_phone):
+                continue
             existing = db.query(Lead).filter(Lead.google_place_id == biz["google_place_id"]).first()
             if existing:
                 skipped += 1
@@ -244,7 +276,8 @@ _SMART_PASSES = [
 ]
 
 
-async def _run_smart_scrape(job_id: int, keyword: str, location: str, target: int):
+async def _run_smart_scrape(job_id: int, keyword: str, location: str, target: int,
+                            min_rating: float = 0.0, min_reviews: int = 0, no_website_only: bool = False, requires_phone: bool = False):
     from database import SessionLocal
     db = SessionLocal()
 
@@ -272,6 +305,8 @@ async def _run_smart_scrape(job_id: int, keyword: str, location: str, target: in
 
             added = 0
             for biz in results:
+                if not _passes_filters(biz, min_rating, min_reviews, no_website_only, requires_phone):
+                    continue
                 existing = db.query(Lead).filter(Lead.google_place_id == biz["google_place_id"]).first()
                 if not existing:
                     db.add(Lead(**{k: v for k, v in biz.items() if hasattr(Lead, k)}))
@@ -675,4 +710,7 @@ def _lead_dict(lead: Lead) -> dict:
         "created_at": lead.created_at.isoformat() if lead.created_at else None,
         "updated_at": lead.updated_at.isoformat() if lead.updated_at else None,
         "contacts": [_contact_dict(c) for c in lead.contacts] if lead.contacts else [],
+        "preview_token": lead.preview_token,
+        "preview_url": f"/preview/{lead.preview_token}" if lead.preview_token else None,
+        "preview_generated_at": lead.preview_generated_at.isoformat() if lead.preview_generated_at else None,
     }
