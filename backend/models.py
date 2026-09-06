@@ -23,10 +23,10 @@ class Lead(Base):
     decision_maker_email = Column(String(255))
     decision_maker_title = Column(String(255))
     email_confidence = Column(Integer)
-    email_status = Column(String(50), default="not_searched")  # not_searched | found | not_found
+    email_status = Column(String(50), default="not_searched", index=True)  # not_searched | found | not_found
     email_source = Column(String(50))  # website_scrape | pattern_guess | apollo | snov | skrapp | findthat | hunter
     # Email validation
-    email_grade = Column(String(20))       # valid | risky | invalid | None (not validated)
+    email_grade = Column(String(20), index=True)   # valid | risky | invalid | None (not validated)
     email_valid_reason = Column(String(100))
     email_validated_at = Column(DateTime)
     # Website preview
@@ -101,14 +101,14 @@ class EmailLog(Base):
     __tablename__ = "email_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
-    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False)
+    lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=True)
     to_email = Column(String(255), nullable=False)
     subject = Column(String(500))
     body_preview = Column(Text)
-    status = Column(String(50), default="pending")  # pending | sent | failed | bounced
+    status = Column(String(50), default="pending", index=True)  # pending | sent | failed | bounced
     error_message = Column(Text)
-    sent_at = Column(DateTime)
+    sent_at = Column(DateTime, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     lead = relationship("Lead", back_populates="email_logs")

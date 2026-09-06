@@ -114,6 +114,11 @@ async function loadDashboardStats() {
     const validData = await api('GET', '/api/leads?email_grade=valid&limit=1');
     const validEl = document.getElementById('mini-valid');
     if (validEl) validEl.textContent = validData.total;
+    // Enable Enrich button whenever leads exist, so returning users can enrich
+    const enrichBtn = document.getElementById('pipe-enrich-btn');
+    if (enrichBtn && L.total > 0 && !_pipeRunning) {
+      enrichBtn.disabled = false;
+    }
   } catch (_) { /* stats optional on first load */ }
 }
 
@@ -273,7 +278,7 @@ async function runEnrich() {
     pipeLog('Queuing Brave Search for decision makers…', 'info');
     const peopleRes = await api('POST', '/api/leads/find-persons-bulk');
     pipeLog(peopleRes.message, peopleRes.queued ? 'ok' : 'info');
-    await _waitForBulk('people', 10, 40);
+    await _waitForBulk('people', 10, 40, peopleRes.job_id);
     setPipeStep('people', 'done');
     document.querySelectorAll('.pipe-step-line')[1]?.classList.add('done');
     await loadDashboardResults();
@@ -284,7 +289,7 @@ async function runEnrich() {
     pipeLog('Queuing email finder chain…', 'info');
     const emailRes = await api('POST', '/api/leads/find-emails-bulk');
     pipeLog(emailRes.message, emailRes.queued ? 'ok' : 'info');
-    await _waitForBulk('emails', 45, 75);
+    await _waitForBulk('emails', 45, 75, emailRes.job_id);
     setPipeStep('emails', 'done');
     document.querySelectorAll('.pipe-step-line')[2]?.classList.add('done');
     await loadDashboardResults();
@@ -296,7 +301,7 @@ async function runEnrich() {
     pipeLog('Queuing email validation…', 'info');
     const valRes = await api('POST', '/api/leads/validate-emails-bulk');
     pipeLog(valRes.message, valRes.queued ? 'ok' : 'info');
-    await _waitForBulk('validate', 80, 98);
+    await _waitForBulk('validate', 80, 98, valRes.job_id);
     setPipeStep('validate', 'done');
     document.querySelectorAll('.pipe-step-line')[3]?.classList.add('done');
 
@@ -352,33 +357,34 @@ function _pollGridJob(jobId) {
   });
 }
 
-async function _waitForBulk(step, pctStart, pctEnd) {
-  // Background tasks have no progress API — poll lead counts until stable or timeout
+async function _waitForBulk(step, pctStart, pctEnd, jobId) {
   const maxWait = step === 'validate' ? 120000 : 180000;
-  const interval = 4000;
+  const interval = 3000;
   const start = Date.now();
-  let lastCount = -1;
-  let stableRounds = 0;
 
-  while (Date.now() - start < maxWait) {
-    await new Promise(r => setTimeout(r, interval));
+  if (jobId) {
+    // Poll the bulk-jobs progress API for accurate done/total tracking
+    while (Date.now() - start < maxWait) {
+      await new Promise(r => setTimeout(r, interval));
+      try {
+        const job = await api('GET', `/api/leads/bulk-jobs/${jobId}`);
+        const done = job.done || 0;
+        const total = job.total || 1;
+        const pct = pctStart + Math.round(((done / total) * (pctEnd - pctStart)));
+        const lastLog = job.log?.length ? job.log[job.log.length - 1] : '';
+        setPipeProgress(Math.min(pct, pctEnd), document.getElementById('prog-title').textContent,
+          `${done} / ${total} leads processed`, lastLog);
+        if (job.status === 'done' || job.status === 'failed') break;
+      } catch (_) { break; }
+    }
+  } else {
+    // Fallback: time-based progress bar only (job had nothing to process)
     const elapsed = Date.now() - start;
-    const pct = pctStart + Math.min(pctEnd - pctStart, (elapsed / maxWait) * (pctEnd - pctStart));
-    setPipeProgress(Math.round(pct), document.getElementById('prog-title').textContent, 'Processing in background…', `Elapsed ${Math.round(elapsed / 1000)}s`);
-
-    try {
-      const data = await api('GET', '/api/leads?limit=1');
-      const count = data.total;
-      if (count === lastCount) {
-        stableRounds++;
-        if (stableRounds >= 3) break;
-      } else {
-        stableRounds = 0;
-        lastCount = count;
-      }
-      await loadDashboardResults();
-    } catch (_) { break; }
+    const pct = pctStart + Math.min(pctEnd - pctStart, (elapsed / 5000) * (pctEnd - pctStart));
+    setPipeProgress(Math.round(pct), document.getElementById('prog-title').textContent, 'Nothing to process', '');
+    await new Promise(r => setTimeout(r, 500));
   }
+  await loadDashboardResults();
 }
 
 
@@ -983,7 +989,7 @@ async function deleteCampaign(id) {
 }
 
 async function openSendModal(campaignId, campaignName) {
-  const leads = await api('GET', '/api/leads?limit=200&email_status=found');
+  const leads = await api('GET', '/api/leads?limit=1&email_status=found');
   openModal(`
     <div class="modal-title">Send Campaign — ${esc(campaignName)}</div>
     <p style="color:var(--text2);font-size:13px;margin-bottom:16px">
@@ -1227,7 +1233,7 @@ function populateLeadPanel(lead) {
             ${gradeBadge(lead.email_grade, lead.email_valid_reason)}
           </div>
         </div>
-        <button class="btn btn-sm btn-ghost" onclick="navigator.clipboard.writeText('${esc(lead.decision_maker_email)}').then(()=>toast('Copied','success'))">Copy</button>
+        <button class="btn btn-sm btn-ghost" data-copy-email="${esc(lead.decision_maker_email)}" onclick="navigator.clipboard.writeText(this.dataset.copyEmail).then(()=>toast('Copied','success'))">Copy</button>
       </div>`;
     // Show compose section when email is known
     document.getElementById('lp-compose-section').style.display = '';
@@ -1251,7 +1257,7 @@ function populateLeadPanel(lead) {
         </div>
         <div style="display:flex;gap:6px">
           <a href="${esc(lead.preview_url)}" target="_blank" class="btn btn-sm btn-ghost">Open</a>
-          <button class="btn btn-sm btn-ghost" onclick="navigator.clipboard.writeText('${esc(window.location.origin + lead.preview_url)}').then(()=>toast('Link copied','success'))">Copy Link</button>
+          <button class="btn btn-sm btn-ghost" data-copy-url="${esc(window.location.origin + lead.preview_url)}" onclick="navigator.clipboard.writeText(this.dataset.copyUrl).then(()=>toast('Link copied','success'))">Copy Link</button>
         </div>
       </div>`;
     document.getElementById('lp-btn-preview-label').textContent = 'Regenerate';

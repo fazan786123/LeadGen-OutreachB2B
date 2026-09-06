@@ -63,6 +63,9 @@ async def send_single_email(req: SendSingleRequest, db: Session = Depends(get_db
         sent_at=datetime.utcnow(),
     )
     db.add(log)
+    if lead.status == "new":
+        lead.status = "contacted"
+        lead.updated_at = datetime.utcnow()
     db.commit()
     return {"ok": True}
 

@@ -34,6 +34,19 @@ async def generate_website_preview(
     if not api_key:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
+    def _safe(s: str, max_len: int = 200) -> str:
+        """Strip characters that could break out of the prompt context."""
+        import re as _re
+        s = str(s)[:max_len]
+        s = _re.sub(r'[`"\'\\]', '', s)
+        return s.strip()
+
+    business_name = _safe(business_name)
+    category = _safe(category)
+    location = _safe(location)
+    phone = _safe(phone, 30)
+    address = _safe(address)
+
     loc_display = location or (address.split(",")[-1].strip() if address else "")
     rating_str = f"{rating} stars ({review_count} reviews)" if rating else "highly rated"
 

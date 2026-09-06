@@ -44,9 +44,6 @@ def _job_log(jid: str, msg: str):
         if len(_bulk_jobs[jid]["log"]) > 200:
             _bulk_jobs[jid]["log"] = _bulk_jobs[jid]["log"][-200:]
 
-# In-memory bulk job tracker — keyed by uuid job_id
-import uuid
-_bulk_jobs: dict = {}
 
 
 class ScrapeRequest(BaseModel):
@@ -454,8 +451,10 @@ async def find_email(lead_id: int, db: Session = Depends(get_db)):
 
     if result["status"] == "found":
         lead.decision_maker_email = result["email"]
-        lead.decision_maker_name = result.get("name")
-        lead.decision_maker_title = result.get("title")
+        if result.get("name"):
+            lead.decision_maker_name = result["name"]
+        if result.get("title"):
+            lead.decision_maker_title = result["title"]
         lead.email_confidence = result.get("confidence")
         lead.email_status = "found"
         lead.email_source = result.get("source")
@@ -505,8 +504,10 @@ async def _bulk_email_search(lead_ids: list[int], jid: str):
             result = await find_email_chain(lead.domain, lead.website or "")
             if result["status"] == "found":
                 lead.decision_maker_email = result["email"]
-                lead.decision_maker_name = result.get("name")
-                lead.decision_maker_title = result.get("title")
+                if result.get("name"):
+                    lead.decision_maker_name = result["name"]
+                if result.get("title"):
+                    lead.decision_maker_title = result["title"]
                 lead.email_confidence = result.get("confidence")
                 lead.email_status = "found"
                 lead.email_source = result.get("source")
@@ -528,6 +529,36 @@ async def _bulk_email_search(lead_ids: list[int], jid: str):
         _job_log(jid, f"❌ Error: {e}")
     finally:
         db.close()
+
+
+@router.get("/export.csv")
+def export_leads_csv(db: Session = Depends(get_db)):
+    """Download all leads as a CSV file."""
+    import csv, io
+    from fastapi.responses import StreamingResponse
+
+    leads = db.query(Lead).order_by(Lead.created_at.desc()).all()
+    fields = ["id", "business_name", "category", "address", "phone", "website", "domain",
+              "rating", "review_count", "status",
+              "decision_maker_name", "decision_maker_title", "decision_maker_email",
+              "email_status", "email_source", "email_grade", "email_valid_reason",
+              "preview_url", "notes", "created_at"]
+
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for lead in leads:
+        row = {f: getattr(lead, f, None) for f in fields}
+        row["preview_url"] = f"/preview/{lead.preview_token}" if lead.preview_token else ""
+        row["created_at"] = lead.created_at.isoformat() if lead.created_at else ""
+        writer.writerow(row)
+
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=leads.csv"},
+    )
 
 
 @router.get("")
@@ -644,19 +675,26 @@ async def validate_emails_bulk_endpoint(
 
     leads = q.all()
     if not leads:
-        return {"message": "No leads to validate", "queued": 0}
+        return {"message": "No leads to validate", "queued": 0, "job_id": None}
 
     pairs = [(l.id, l.decision_maker_email) for l in leads]
-    background_tasks.add_task(_bulk_validate_bg, pairs)
-    return {"message": f"Queued {len(leads)} leads for validation", "queued": len(leads)}
+    jid = _new_bulk_job(len(leads), "validate")
+    background_tasks.add_task(_bulk_validate_bg, pairs, jid)
+    return {"message": f"Queued {len(leads)} leads for validation", "queued": len(leads), "job_id": jid}
 
 
-async def _bulk_validate_bg(pairs: list[tuple[int, str]]):
+async def _bulk_validate_bg(pairs: list[tuple[int, str]], jid: str):
     from database import SessionLocal
-    results = await validate_emails_bulk(pairs)
+    _job_log(jid, f"🔍 Validating {len(pairs)} emails…")
+    try:
+        results = await validate_emails_bulk(pairs)
+    except Exception as e:
+        _bulk_jobs[jid]["status"] = "failed"
+        _job_log(jid, f"❌ Error: {e}")
+        return
     db = SessionLocal()
     try:
-        for r in results:
+        for i, r in enumerate(results):
             lead = db.query(Lead).filter(Lead.id == r["lead_id"]).first()
             if not lead:
                 continue
@@ -664,7 +702,17 @@ async def _bulk_validate_bg(pairs: list[tuple[int, str]]):
             lead.email_valid_reason = r["reason"]
             lead.email_validated_at = datetime.utcnow()
             lead.updated_at = datetime.utcnow()
+            _bulk_jobs[jid]["done"] = i + 1
+            grade_icon = "✓" if r["grade"] == "valid" else ("⚠" if r["grade"] == "risky" else "✗")
+            _job_log(jid, f"  {grade_icon} {lead.decision_maker_email} → {r['grade']}")
         db.commit()
+        _bulk_jobs[jid]["status"] = "done"
+        _bulk_jobs[jid]["done"] = len(pairs)
+        _bulk_jobs[jid]["current"] = ""
+        _job_log(jid, f"✅ Done — validated {len(pairs)} emails")
+    except Exception as e:
+        _bulk_jobs[jid]["status"] = "failed"
+        _job_log(jid, f"❌ Error: {e}")
     finally:
         db.close()
 
